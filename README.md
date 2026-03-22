@@ -46,8 +46,6 @@ and it will — you can breathe out, open a tab, and click *Restore*.
 <!-- Replace this with your demo GIF -->
 ![ChronoBase Demo](assets/demo.gif)
 
-> *Record a quick demo: add a connection → run a backup → restore it.  
-> Tools: [ScreenToGif](https://www.screentogif.com/) (Windows) · [Kap](https://getkap.co/) (macOS)*
 
 </div>
 
