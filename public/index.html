@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChronoBase</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-row">
+      <div class="logo-gem">CB</div>
+      <div class="logo-name">ChronoBase</div>
+    </div>
+    <div class="logo-tag">Backup Manager</div>
+  </div>
+
+  <nav>
+    <div class="nav-section">Main</div>
+    <button class="nav-item active" data-nav="dashboard"><span class="nav-icon">◈</span> Dashboard</button>
+    <button class="nav-item" data-nav="connections"><span class="nav-icon">⬡</span> Connections <span class="nav-badge" id="conn-badge">0</span></button>
+    <button class="nav-item" data-nav="backups"><span class="nav-icon">◎</span> Backups</button>
+    <div class="nav-section">Config</div>
+    <button class="nav-item" data-nav="schedules"><span class="nav-icon">◷</span> Schedules</button>
+    <button class="nav-item" data-nav="setup"><span class="nav-icon">⚙</span> Setup</button>
+    <div class="nav-section">Danger</div>
+    <button class="nav-item danger" data-nav="danger"><span class="nav-icon">⚠</span> Danger Zone</button>
+  </nav>
+
+  <div class="tool-pills">
+    <div class="tool-pill"><div class="pill-dot err" id="sidebar-pg-dot"></div><span id="sidebar-pg-label">pg_dump…</span></div>
+    <div class="tool-pill"><div class="pill-dot err" id="sidebar-mongo-dot"></div><span id="sidebar-mongo-label">mongodump…</span></div>
+  </div>
+</aside>
+
+<main class="main">
+
+  <!-- ── Dashboard ── -->
+  <div class="page active" id="page-dashboard">
+    <div class="topbar">
+      <div class="page-head"><h1>Dashboard</h1><p>Overview of your databases and snapshots</p></div>
+      <button class="btn btn-primary" id="backup-all-btn">⚡ Backup All</button>
+    </div>
+    <div class="content">
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-icon">⬡</div>
+          <div class="stat-label">Connections</div>
+          <div class="stat-value" id="s-conns">—</div>
+          <div class="stat-sub">databases tracked</div>
+        </div>
+        <div class="stat">
+          <div class="stat-icon">◎</div>
+          <div class="stat-label">Backups</div>
+          <div class="stat-value" id="s-backups">—</div>
+          <div class="stat-sub" id="s-rate">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-icon">💾</div>
+          <div class="stat-label">Storage</div>
+          <div class="stat-value" id="s-size" style="font-size:22px">—</div>
+          <div class="stat-sub">on local disk</div>
+        </div>
+        <div class="stat">
+          <div class="stat-icon">◷</div>
+          <div class="stat-label">Last Backup</div>
+          <div class="stat-value" id="s-last" style="font-size:15px;font-family:var(--ui);font-weight:600;line-height:1.3">—</div>
+          <div class="stat-sub" id="s-scheds">—</div>
+        </div>
+      </div>
+
+      <div class="quick-grid">
+        <div class="quick-card" data-goto="connections"><div class="qc-icon">⬡</div><h4>Manage Connections</h4><p>Add Postgres & MongoDB URLs, organised by group</p></div>
+        <div class="quick-card" data-goto="schedules"><div class="qc-icon">◷</div><h4>Schedules</h4><p>Auto-backup at any time using cron expressions</p></div>
+        <div class="quick-card" data-goto="backups"><div class="qc-icon">◎</div><h4>Browse Backups</h4><p>View history, filter, restore or delete snapshots</p></div>
+        <div class="quick-card" data-goto="setup"><div class="qc-icon">⚙</div><h4>Setup Guide</h4><p>Install pg_dump and mongodump on any platform</p></div>
+      </div>
+
+      <div class="section-header"><div class="section-title">Recent Snapshots</div></div>
+      <div class="table-wrap" id="recent-wrap">
+        <div class="empty"><div class="empty-icon">◎</div><div class="empty-title">No backups yet</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Connections ── -->
+  <div class="page" id="page-connections">
+    <div class="topbar">
+      <div class="page-head"><h1>Connections</h1><p>Your database URLs, organised by group</p></div>
+      <button class="btn btn-primary" id="add-conn-btn">+ Add Connection</button>
+    </div>
+    <div class="content">
+      <div class="toolbar">
+        <select class="select-filter" id="conn-group-filter"><option value="">All Groups</option></select>
+        <select class="select-filter" id="conn-type-filter"><option value="">All Types</option><option value="postgres">PostgreSQL</option><option value="mongodb">MongoDB</option></select>
+        <button class="btn btn-ghost btn-sm" id="backup-group-btn">⚡ Backup Group</button>
+      </div>
+      <div class="table-wrap" id="conn-table-wrap"><div class="empty"><div class="empty-icon">⬡</div><div class="empty-title">No connections yet</div></div></div>
+    </div>
+  </div>
+
+  <!-- ── Backups ── -->
+  <div class="page" id="page-backups">
+    <div class="topbar">
+      <div class="page-head"><h1>Backups</h1><p>Browse, restore, or delete saved snapshots</p></div>
+    </div>
+    <div class="content">
+      <div class="toolbar">
+        <select class="select-filter" id="bk-group-filter"><option value="">All Groups</option></select>
+        <select class="select-filter" id="bk-type-filter"><option value="">All Types</option><option value="postgres">PostgreSQL</option><option value="mongodb">MongoDB</option></select>
+        <select class="select-filter" id="bk-status-filter"><option value="">All Status</option><option value="success">Success</option><option value="failed">Failed</option></select>
+      </div>
+      <div class="table-wrap" id="bk-table-wrap"><div class="empty"><div class="empty-icon">◎</div><div class="empty-title">No backups yet</div></div></div>
+    </div>
+  </div>
+
+  <!-- ── Schedules ── -->
+  <div class="page" id="page-schedules">
+    <div class="topbar">
+      <div class="page-head"><h1>Schedules</h1><p>Automated backups using cron expressions</p></div>
+      <button class="btn btn-primary" id="add-sched-btn">+ New Schedule</button>
+    </div>
+    <div class="content">
+      <div class="table-wrap" id="sched-table-wrap"><div class="empty"><div class="empty-icon">◷</div><div class="empty-title">No schedules yet</div></div></div>
+    </div>
+  </div>
+
+  <!-- ── Setup ── -->
+  <div class="page" id="page-setup">
+    <div class="topbar">
+      <div class="page-head"><h1>Setup</h1><p>Install required CLI tools on your platform</p></div>
+      <button class="btn btn-ghost" id="recheck-tools-btn">↻ Re-check</button>
+    </div>
+    <div class="content">
+      <div class="setup-grid">
+        <div class="setup-card">
+          <div class="setup-card-title">🐘 PostgreSQL — pg_dump</div>
+          <div class="setup-status err" id="pg-setup-status"><div class="pill-dot err" id="pg-setup-dot"></div><span id="pg-setup-text">Checking…</span></div>
+          <div class="step"><div class="step-num">1</div><div><div class="step-title">Windows</div><div class="step-desc">Download from postgresql.org/download/windows → select "Command Line Tools" only → add to PATH:</div><div class="code-snippet">C:\Program Files\PostgreSQL\18\bin</div><div class="step-desc">Open a <strong>new</strong> terminal and verify:</div><div class="code-snippet">pg_dump --version</div></div></div>
+          <div class="step"><div class="step-num">2</div><div><div class="step-title">macOS</div><div class="code-snippet">brew install libpq && brew link --force libpq</div></div></div>
+          <div class="step"><div class="step-num">3</div><div><div class="step-title">Linux</div><div class="code-snippet">sudo apt install postgresql-client</div></div></div>
+        </div>
+        <div class="setup-card">
+          <div class="setup-card-title">🍃 MongoDB — mongodump</div>
+          <div class="setup-status err" id="mongo-setup-status"><div class="pill-dot err" id="mongo-setup-dot"></div><span id="mongo-setup-text">Checking…</span></div>
+          <div class="step"><div class="step-num">1</div><div><div class="step-title">Windows</div><div class="step-desc">Download MSI from mongodb.com/try/download/database-tools — installer adds to PATH automatically.</div></div></div>
+          <div class="step"><div class="step-num">2</div><div><div class="step-title">macOS</div><div class="code-snippet">brew tap mongodb/brew && brew install mongodb-database-tools</div></div></div>
+          <div class="step"><div class="step-num">3</div><div><div class="step-title">Linux</div><div class="code-snippet">sudo apt install mongo-tools</div></div></div>
+          <div class="step"><div class="step-num">4</div><div><div class="step-title">Atlas</div><div class="step-desc">mongodb+srv:// URLs work directly — no extra config needed.</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Danger Zone ── -->
+  <div class="page" id="page-danger">
+    <div class="topbar">
+      <div class="page-head"><h1>Danger Zone</h1><p>Irreversible actions — read carefully before proceeding</p></div>
+    </div>
+    <div class="content">
+
+      <div class="danger-zone">
+        <div class="danger-zone-header">
+          <span>⚠</span>
+          <div class="danger-zone-title">Destructive Actions</div>
+        </div>
+
+        <div class="danger-action">
+          <div class="danger-action-text">
+            <h4>Delete all backup files</h4>
+            <p>Permanently removes all .sql files and MongoDB BSON folders from disk. Connection history entries are also cleared. Your connections and schedules are kept.</p>
+          </div>
+          <button class="btn btn-danger btn-sm" id="open-delete-backups-btn" style="flex-shrink:0;margin-left:24px">Delete Backups</button>
+        </div>
+
+        <div class="danger-action">
+          <div class="danger-action-text">
+            <h4>Reset everything</h4>
+            <p>Deletes all connections, schedules, backup history, and every backup file on disk. ChronoBase returns to a completely blank state. There is no undo.</p>
+          </div>
+          <button class="btn btn-danger btn-sm" id="open-delete-all-btn" style="flex-shrink:0;margin-left:24px">Reset Everything</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<div class="toast-container" id="toast-container"></div>
+
+<!-- ── Connection Modal ── -->
+<div class="modal-overlay" id="conn-modal">
+  <div class="modal">
+    <div class="modal-icon green">⬡</div>
+    <div class="modal-title" id="conn-modal-title">Add Connection</div>
+    <div class="modal-sub">Provide a name, group, type, and connection URL.</div>
+    <form id="conn-form" onsubmit="return false">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Display Name</label><input class="form-input" id="f-name" placeholder="Production DB" autocomplete="off"></div>
+        <div class="form-group"><label class="form-label">Group</label><input class="form-input" id="f-group" placeholder="Production" value="Default"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="f-type"><option value="postgres">PostgreSQL</option><option value="mongodb">MongoDB</option></select></div>
+      <div class="form-group"><label class="form-label">Connection URL</label><input class="form-input mono" id="f-url" placeholder="postgresql://user:pass@host:5432/db"><div class="form-hint" id="f-url-hint">postgresql://username:password@host:5432/database</div></div>
+      <div class="form-group"><label class="form-label">Notes (optional)</label><textarea class="form-textarea" id="f-notes" placeholder="Any notes about this database…"></textarea></div>
+    </form>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="cancel-conn-btn">Cancel</button>
+      <button class="btn btn-primary" id="save-conn-btn">Save Connection</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Schedule Modal ── -->
+<div class="modal-overlay" id="sched-modal">
+  <div class="modal">
+    <div class="modal-icon green">◷</div>
+    <div class="modal-title">New Schedule</div>
+    <div class="modal-sub">Backups run silently in the background at your chosen time.</div>
+    <form id="sched-form" onsubmit="return false">
+      <div class="form-group"><label class="form-label">Schedule Name</label><input class="form-input" id="s-name" placeholder="Nightly Backup"></div>
+      <div class="form-group"><label class="form-label">Target Group</label><select class="form-select" id="s-group"><option value="All">All Connections</option></select></div>
+      <div class="form-group">
+        <label class="form-label">Cron Expression</label>
+        <input class="form-input mono" id="s-cron" placeholder="0 2 * * *" value="0 2 * * *">
+        <div class="cron-chips">
+          <div class="cron-chip" data-cron="0 2 * * *">Daily 2am</div>
+          <div class="cron-chip" data-cron="0 */6 * * *">Every 6h</div>
+          <div class="cron-chip" data-cron="0 * * * *">Hourly</div>
+          <div class="cron-chip" data-cron="0 2 * * 0">Weekly Sun</div>
+          <div class="cron-chip" data-cron="0 2 1 * *">Monthly</div>
+        </div>
+      </div>
+    </form>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="cancel-sched-btn">Cancel</button>
+      <button class="btn btn-primary" id="save-sched-btn">Create Schedule</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Restore Modal ── -->
+<div class="modal-overlay" id="restore-modal">
+  <div class="modal modal-lg">
+    <div class="modal-icon amber">↩</div>
+    <div class="modal-title">Restore Snapshot</div>
+    <div class="modal-sub">Choose where to push this backup.</div>
+    <input type="hidden" id="r-original-url">
+    <div class="info-grid" id="r-info"></div>
+    <div class="form-group">
+      <label class="form-label">Destination</label>
+      <div class="mode-toggle">
+        <button class="mode-btn active-same" id="r-btn-same">↩ Same Database</button>
+        <button class="mode-btn" id="r-btn-other">→ Different Database</button>
+      </div>
+    </div>
+    <div id="r-sec-same">
+      <div class="alert alert-danger"><div class="alert-title">⚠ This overwrites your live database</div>All current data is replaced with this snapshot. Cannot be undone.</div>
+      <div class="form-group"><label class="form-label">Restoring to (original)</label><input class="form-input mono" id="r-same-url-display" readonly style="opacity:0.45;cursor:not-allowed"></div>
+    </div>
+    <div id="r-sec-other" style="display:none">
+      <div class="alert alert-info"><div class="alert-title">Push to a different database</div>Clone to staging, migrate servers, or test without touching production.</div>
+      <div class="form-group"><label class="form-label">Target URL</label><input class="form-input mono" id="r-other-url" placeholder="postgresql://user:pass@newhost:5432/targetdb"><div class="form-hint">The target database must already exist and be accessible.</div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="cancel-restore-btn">Cancel</button>
+      <button class="btn btn-danger" id="r-confirm-btn">⚠ Overwrite & Restore</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Delete Backups Modal ── -->
+<div class="modal-overlay" id="delete-backups-modal">
+  <div class="modal">
+    <div class="modal-icon red">🗑</div>
+    <div class="modal-title">Delete all backup files</div>
+    <div class="modal-sub">This will permanently remove every .sql file and MongoDB BSON folder from your disk. Your connections and schedules will not be affected.</div>
+    <div class="confirm-input-wrap">
+      <div class="confirm-label">Type <span class="confirm-phrase">DELETE BACKUPS</span> to confirm:</div>
+      <input class="confirm-input" id="confirm-delete-backups" placeholder="type here…" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="cancel-delete-backups-btn">Cancel</button>
+      <button class="btn btn-confirm-danger" id="confirm-delete-backups-btn" disabled>Delete All Backups</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Delete Everything Modal ── -->
+<div class="modal-overlay" id="delete-all-modal">
+  <div class="modal">
+    <div class="modal-icon red">💀</div>
+    <div class="modal-title">Reset everything</div>
+    <div class="modal-sub">This deletes all connections, schedules, backup history, and every backup file on disk. ChronoBase returns to a completely blank state. There is absolutely no undo.</div>
+    <div class="confirm-input-wrap">
+      <div class="confirm-label">Type <span class="confirm-phrase">DELETE EVERYTHING</span> to confirm:</div>
+      <input class="confirm-input" id="confirm-delete-all" placeholder="type here…" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="cancel-delete-all-btn">Cancel</button>
+      <button class="btn btn-confirm-danger" id="confirm-delete-all-btn" disabled>Reset Everything</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── Generic Confirm Modal ── -->
+<div class="modal-overlay" id="generic-confirm-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-icon amber" id="generic-confirm-icon">⚠</div>
+    <div class="modal-title" id="generic-confirm-title">Are you sure?</div>
+    <div class="confirm-body" id="generic-confirm-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="generic-confirm-cancel">Cancel</button>
+      <button class="btn btn-danger" id="generic-confirm-ok">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

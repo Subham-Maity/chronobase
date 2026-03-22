@@ -1,0 +1,21 @@
+{
+  "name": "chronobase",
+  "version": "1.0.0",
+  "description": "Local database backup manager for PostgreSQL and MongoDB — schedule, snapshot, restore.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["database", "backup", "postgresql", "mongodb", "scheduler", "restore", "devtools"],
+  "author": "Subham-Maity <https://github.com/Subham-Maity>",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.3",
+    "node-cron": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
