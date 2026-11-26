@@ -26,7 +26,6 @@ export component Icon inherits Path {
     in property <string> svg-path;
     in property <color> tint: Palette.ink-2;
     in property <length> size: 16px;
-    in property <length> stroke-width: 1.75px;
 
     width: size;
     height: size;
@@ -37,7 +36,7 @@ export component Icon inherits Path {
     commands: svg-path;
     fill: transparent;
     stroke: tint;
-    stroke-width: stroke-width;
+    stroke-width: 1.75px;
     stroke-line-cap: round;
     stroke-line-join: round;
 }
