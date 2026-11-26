@@ -1,0 +1,263 @@
+// Connections page — "Grouped Ledger" with inline group headings,
+// responsive column collapse (< 820px content width), and quiet icon actions.
+
+import { ScrollView } from "std-widgets.slint";
+import { Palette, Type, Space } from "../theme.slint";
+import { Icons, Icon } from "../icons.slint";
+import { PrimaryButton, GhostButton, DangerButton, WipeButton } from "../components/buttons.slint";
+import { Badge } from "../components/badge.slint";
+import { CycleButton } from "../components/form_field.slint";
+import { Surface } from "../components/surface.slint";
+
+export struct ConnectionRow {
+    id: int,
+    name: string,
+    group-name: string,
+    db-type: string,
+    masked-url: string,
+}
+
+export component ConnectionsPage inherits VerticalLayout {
+    in property <[ConnectionRow]> rows: [];
+    in property <string> group-filter-label: "All Groups";
+    in property <string> type-filter-label: "All Types";
+    in property <bool> backup-group-busy: false;
+
+    callback add-connection();
+    callback cycle-group-filter();
+    callback cycle-type-filter();
+    callback backup-group();
+    callback backup-one(int);
+    callback edit-one(int);
+    callback wipe-one(int);
+    callback delete-one(int);
+
+    property <bool> compact: root.width < 820px;
+
+    padding: Space.s32;
+    spacing: Space.s24;
+
+    // Header
+    HorizontalLayout {
+        alignment: space-between;
+        spacing: Space.s16;
+        VerticalLayout {
+            spacing: 4px;
+            Text {
+                text: "Connections";
+                font-family: Palette.font-ui;
+                font-size: Type.title;
+                font-weight: 600;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "PostgreSQL and MongoDB targets organised by group";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            PrimaryButton {
+                text: "Add connection";
+                icon-path: Icons.plus;
+                clicked => { root.add-connection(); }
+            }
+        }
+    }
+
+    // Toolbar
+    HorizontalLayout {
+        spacing: Space.s12;
+        alignment: start;
+        CycleButton {
+            label: group-filter-label;
+            clicked => { root.cycle-group-filter(); }
+        }
+        CycleButton {
+            label: type-filter-label;
+            clicked => { root.cycle-type-filter(); }
+        }
+        GhostButton {
+            text: backup-group-busy ? "Backing up..." : "Back up group";
+            icon-path: Icons.bolt;
+            small: true;
+            enabled: !backup-group-busy;
+            clicked => { root.backup-group(); }
+        }
+    }
+
+    // Grouped ledger
+    Surface {
+        vertical-stretch: 1;
+
+        if rows.length == 0: VerticalLayout {
+            alignment: center;
+            spacing: Space.s12;
+            HorizontalLayout {
+                alignment: center;
+                Icon { svg-path: Icons.database; tint: Palette.ink-3; size: 28px; }
+            }
+            Text {
+                text: "No connections yet";
+                font-family: Palette.font-ui;
+                font-size: Type.body;
+                font-weight: 500;
+                color: Palette.ink-1;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Add a PostgreSQL or MongoDB connection URL to begin.";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+                horizontal-alignment: center;
+            }
+            HorizontalLayout {
+                alignment: center;
+                PrimaryButton {
+                    text: "Add connection";
+                    icon-path: Icons.plus;
+                    clicked => { root.add-connection(); }
+                }
+            }
+        }
+
+        if rows.length > 0: VerticalLayout {
+            // Shared column header
+            Rectangle {
+                height: 38px;
+                background: Palette.tier-base;
+                border-width: 1px;
+                border-color: Palette.line;
+                HorizontalLayout {
+                    padding-left: Space.s16;
+                    padding-right: Space.s16;
+                    spacing: Space.s12;
+                    Text { text: "Database"; horizontal-stretch: 2; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    Text { text: "Engine"; width: 112px; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    if !compact: Text { text: "Connection URL"; horizontal-stretch: 3; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    Text { text: "Actions"; width: 248px; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                }
+            }
+
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    alignment: start;
+
+                    for row[idx] in rows: VerticalLayout {
+                        // Inline group heading whenever group-name changes
+                        if idx == 0 || row.group-name != rows[idx - 1].group-name: Rectangle {
+                            height: 32px;
+                            background: Palette.tier-raised;
+                            border-width: 1px;
+                            border-color: Palette.row-divider;
+                            HorizontalLayout {
+                                padding-left: Space.s16;
+                                padding-right: Space.s16;
+                                Text {
+                                    text: row.group-name;
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.min-label;
+                                    font-weight: 600;
+                                    color: Palette.ink-2;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            height: 52px;
+                            border-width: 1px;
+                            border-color: Palette.row-divider;
+
+                            HorizontalLayout {
+                                padding-left: Space.s16;
+                                padding-right: Space.s16;
+                                spacing: Space.s12;
+
+                                Text {
+                                    text: row.name;
+                                    horizontal-stretch: 2;
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.body;
+                                    font-weight: 500;
+                                    color: Palette.ink-1;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+
+                                HorizontalLayout {
+                                    width: 112px;
+                                    alignment: start;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Badge {
+                                            text: row.db-type == "postgres" ? "Postgres" : "MongoDB";
+                                            variant: row.db-type == "postgres" ? "pg" : "mongo";
+                                        }
+                                    }
+                                }
+
+                                if !compact: Text {
+                                    text: row.masked-url;
+                                    horizontal-stretch: 3;
+                                    font-family: Palette.font-mono;
+                                    font-size: Type.min-label;
+                                    color: Palette.ink-3;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+
+                                HorizontalLayout {
+                                    width: 248px;
+                                    spacing: 6px;
+                                    alignment: end;
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        PrimaryButton {
+                                            text: "Back up";
+                                            icon-path: Icons.bolt;
+                                            small: true;
+                                            a11y-label: "Back up " + row.name;
+                                            clicked => { root.backup-one(row.id); }
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        GhostButton {
+                                            icon-path: Icons.edit;
+                                            small: true;
+                                            a11y-label: "Edit " + row.name;
+                                            clicked => { root.edit-one(row.id); }
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        WipeButton {
+                                            text: "Wipe";
+                                            a11y-label: "Wipe database " + row.name;
+                                            clicked => { root.wipe-one(row.id); }
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        DangerButton {
+                                            icon-path: Icons.trash;
+                                            small: true;
+                                            a11y-label: "Delete " + row.name;
+                                            clicked => { root.delete-one(row.id); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

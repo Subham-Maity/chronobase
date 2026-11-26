@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ChronoBase
+Comment=Local-first PostgreSQL and MongoDB backup manager
+Exec=chronobase
+Icon=chronobase
+Terminal=false
+Categories=Utility;Database;
+Keywords=backup;postgres;mongodb;database;cron;
+

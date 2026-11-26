@@ -1,0 +1,26 @@
+[package]
+name = "chronobase"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["renderer-femtovg"]
+software = ["renderer-software"]
+renderer-femtovg = ["slint/renderer-femtovg"]
+renderer-software = ["slint/renderer-software"]
+
+[dependencies]
+chronobase-core = { path = "../core" }
+slint.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+chrono.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true
+

@@ -1,0 +1,203 @@
+// Animated modal overlay, generic ConfirmDialog, and ToastBanner
+
+import { Palette, Type, Motion } from "../theme.slint";
+import { Icon, Icons } from "../icons.slint";
+import { GhostButton, DangerButton, DangerConfirmButton } from "./buttons.slint";
+
+export component ModalOverlay inherits Rectangle {
+    in property <bool> open: false;
+    in property <length> modal-width: 460px;
+    callback backdrop-clicked();
+
+    opacity: open ? 1.0 : 0.0;
+    visible: self.opacity > 0.01;
+    background: rgba(10, 9, 8, 0.78);
+
+    animate opacity { duration: Motion.base; easing: ease-out; }
+
+    // Esc closes modal
+    FocusScope {
+        enabled: root.open;
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.backdrop-clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    TouchArea {
+        enabled: root.open;
+        clicked => { root.backdrop-clicked(); }
+    }
+
+    Rectangle {
+        width: min(modal-width, parent.width - 32px);
+        max-height: parent.height - 48px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2 + (open ? 0px : 10px);
+        border-radius: Palette.r-lg;
+        background: Palette.tier-float;
+        border-width: 1px;
+        border-color: Palette.line-strong;
+        drop-shadow-color: rgba(0, 0, 0, 0.70);
+        drop-shadow-blur: 40px;
+        drop-shadow-offset-y: 16px;
+
+        animate y { duration: Motion.base; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+
+        TouchArea {}
+
+        // Top highlight hairline
+        Rectangle {
+            y: 0px;
+            x: parent.border-radius;
+            width: max(0px, parent.width - 2 * parent.border-radius);
+            height: 1px;
+            background: @linear-gradient(90deg, transparent 0%, Palette.line-highlight 50%, transparent 100%);
+        }
+
+        VerticalLayout {
+            padding: 26px;
+            @children
+        }
+    }
+}
+
+export component ConfirmDialog inherits ModalOverlay {
+    in property <string> title: "Are you sure?";
+    in property <string> body: "";
+    in property <string> confirm-label: "Confirm";
+    in property <bool> destructive: true;
+    callback cancel();
+    callback confirm();
+
+    modal-width: 420px;
+    backdrop-clicked => { root.cancel(); }
+
+    VerticalLayout {
+        spacing: 14px;
+
+        Rectangle {
+            width: 40px;
+            height: 40px;
+            border-radius: Palette.r-md;
+            background: destructive ? Palette.bad-dim : Palette.warn-dim;
+            border-width: 1px;
+            border-color: destructive ? Palette.bad-border : Palette.warn-border;
+
+            Icon {
+                svg-path: Icons.alert;
+                tint: destructive ? Palette.bad : Palette.warn;
+                size: 18px;
+            }
+        }
+
+        Text {
+            text: root.title;
+            font-family: Palette.font-ui;
+            font-size: Type.section;
+            font-weight: 700;
+            color: Palette.ink-1;
+        }
+
+        Text {
+            text: root.body;
+            font-family: Palette.font-ui;
+            font-size: Type.body;
+            color: Palette.ink-2;
+            wrap: word-wrap;
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Palette.line;
+        }
+
+        HorizontalLayout {
+            alignment: end;
+            spacing: 10px;
+
+            GhostButton {
+                text: "Cancel";
+                clicked => { root.cancel(); }
+            }
+
+            if destructive: DangerConfirmButton {
+                text: root.confirm-label;
+                clicked => { root.confirm(); }
+            }
+
+            if !destructive: DangerButton {
+                text: root.confirm-label;
+                clicked => { root.confirm(); }
+            }
+        }
+    }
+}
+
+export struct ToastMessage {
+    id: int,
+    text: string,
+    kind: string,
+}
+
+export component ToastBanner inherits Rectangle {
+    in property <ToastMessage> item;
+
+    width: 340px;
+    min-height: 46px;
+    border-radius: Palette.r-md;
+    background: Palette.tier-float;
+    border-width: 1px;
+    border-color: Palette.line-strong;
+    drop-shadow-color: rgba(0, 0, 0, 0.55);
+    drop-shadow-blur: 24px;
+    drop-shadow-offset-y: 8px;
+    accessible-role: text;
+    accessible-label: item.text;
+
+    // Left semantic accent stripe
+    Rectangle {
+        x: 0px;
+        y: 8px;
+        width: 3px;
+        height: parent.height - 16px;
+        border-radius: 2px;
+        background: item.kind == "error" ? Palette.bad
+            : item.kind == "success" ? Palette.ok
+            : Palette.signal;
+    }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 14px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 10px;
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                svg-path: item.kind == "error" ? Icons.close
+                    : item.kind == "success" ? Icons.check
+                    : Icons.bolt;
+                tint: item.kind == "error" ? Palette.bad
+                    : item.kind == "success" ? Palette.ok
+                    : Palette.signal;
+                size: 15px;
+            }
+        }
+
+        Text {
+            text: item.text;
+            font-family: Palette.font-ui;
+            font-size: Type.secondary;
+            color: Palette.ink-1;
+            wrap: word-wrap;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}

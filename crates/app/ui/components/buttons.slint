@@ -1,0 +1,149 @@
+// Unified button implementation with FocusScope, 2px signal focus ring,
+// keyboard activation (Enter/Space), accessible metadata, and legacy thin wrappers.
+
+import { Palette, Type, Motion } from "../theme.slint";
+import { Icon } from "../icons.slint";
+
+export component StoneButton inherits Rectangle {
+    in property <string> text: "";
+    in property <string> icon-path: "";
+    // "primary", "secondary", "quiet", "warn", "danger", "danger-solid"
+    in property <string> kind: "secondary";
+    in property <bool> enabled: true;
+    in property <bool> small: false;
+    in property <string> a11y-label: text;
+    callback clicked();
+
+    height: small ? 32px : 38px;
+    min-width: 32px;
+    border-radius: Palette.r-sm;
+    opacity: enabled ? 1.0 : 0.42;
+    accessible-role: button;
+    accessible-label: a11y-label;
+
+    background: kind == "primary" ? @linear-gradient(180deg, #F5F5F4 0%, #E7E5E4 100%)
+        : kind == "danger-solid" ? @linear-gradient(180deg, Palette.bad-solid 0%, Palette.bad-solid-dark 100%)
+        : kind == "danger" ? Palette.bad-dim
+        : kind == "warn" ? Palette.warn-dim
+        : kind == "quiet" ? transparent
+        : Palette.tier-raised;
+
+    border-width: kind == "primary" || kind == "danger-solid" ? 0px : 1px;
+    border-color: kind == "danger" ? Palette.bad-border
+        : kind == "warn" ? Palette.warn-border
+        : kind == "quiet" ? transparent
+        : Palette.line-strong;
+
+    drop-shadow-color: kind == "primary" && enabled ? rgba(0, 0, 0, 0.45) : transparent;
+    drop-shadow-blur: kind == "primary" ? 12px : 0px;
+    drop-shadow-offset-y: kind == "primary" ? 3px : 0px;
+
+    animate background { duration: Motion.micro; easing: ease-out; }
+    animate border-color { duration: Motion.micro; easing: ease-out; }
+
+    states [
+        pressed when touch.pressed && enabled : {
+            background: kind == "primary" ? #D6D3D1
+                : kind == "danger-solid" ? Palette.bad-solid-dark
+                : kind == "danger" ? rgba(242, 139, 125, 0.22)
+                : kind == "warn" ? rgba(233, 184, 114, 0.22)
+                : Palette.stone-800;
+        }
+        hovered when touch.has-hover && enabled : {
+            background: kind == "primary" ? #FFFFFF
+                : kind == "danger-solid" ? #EF4444
+                : kind == "danger" ? rgba(242, 139, 125, 0.18)
+                : kind == "warn" ? rgba(233, 184, 114, 0.18)
+                : Palette.tier-hover;
+            border-color: kind == "danger" ? Palette.bad
+                : kind == "warn" ? Palette.warn
+                : Palette.line-strong;
+        }
+    ]
+
+    // 2px signal focus ring
+    if focus.has-focus && enabled: Rectangle {
+        x: -3px;
+        y: -3px;
+        width: parent.width + 6px;
+        height: parent.height + 6px;
+        border-radius: parent.border-radius + 2px;
+        border-width: 2px;
+        border-color: Palette.signal;
+    }
+
+    HorizontalLayout {
+        padding-left: root.text == "" ? 8px : (small ? 12px : 16px);
+        padding-right: root.text == "" ? 8px : (small ? 12px : 16px);
+        spacing: 7px;
+        alignment: center;
+
+        if icon-path != "": VerticalLayout {
+            alignment: center;
+            Icon {
+                svg-path: icon-path;
+                size: small ? 14px : 15px;
+                tint: kind == "primary" ? Palette.on-signal
+                    : kind == "danger-solid" ? #FFFFFF
+                    : kind == "danger" ? Palette.bad
+                    : kind == "warn" ? Palette.warn
+                    : touch.has-hover ? Palette.ink-1 : Palette.ink-2;
+            }
+        }
+
+        if root.text != "": Text {
+            text: root.text;
+            font-family: Palette.font-ui;
+            font-size: small ? Type.min-label : Type.secondary;
+            font-weight: kind == "primary" || kind == "danger-solid" ? 600 : 500;
+            color: kind == "primary" ? Palette.on-signal
+                : kind == "danger-solid" ? #FFFFFF
+                : kind == "danger" ? Palette.bad
+                : kind == "warn" ? Palette.warn
+                : touch.has-hover ? Palette.ink-1 : Palette.ink-2;
+            vertical-alignment: center;
+        }
+    }
+
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == " ") {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: enabled ? pointer : not-allowed;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component PrimaryButton inherits StoneButton {
+    kind: "primary";
+}
+
+export component GhostButton inherits StoneButton {
+    kind: "secondary";
+}
+
+export component DangerButton inherits StoneButton {
+    kind: "danger";
+}
+
+export component DangerConfirmButton inherits StoneButton {
+    kind: "danger-solid";
+}
+
+export component WipeButton inherits StoneButton {
+    kind: "warn";
+    small: true;
+}
+
+export component SuccessButton inherits StoneButton {
+    kind: "primary";
+}

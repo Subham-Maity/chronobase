@@ -7,33 +7,30 @@ Thanks for taking the time to contribute!
 ```bash
 git clone https://github.com/Subham-Maity/chronobase.git
 cd chronobase
-npm install
-node server.js
+cargo test --workspace
+cargo run -p chronobase
 ```
 
-Open http://localhost:3420.
+On Linux, install the Slint system dependencies first (see `README.md`).
 
 ## Project structure
 
-- `src/` — backend modules (database, backup engine, scheduler, routes)
-- `public/js/pages/` — one file per UI page
-- `public/css/style.css` — all styles in one file
+- `crates/core/` — UI-free domain logic, atomic JSON store, backup/restore/wipe engine, cron scheduler, and tool discovery
+- `crates/app/` — Slint UI (`.slint` files under `ui/`), CLI/headless entrypoint, and background runtime bridge
+- `scripts/` — Cross-platform release packaging scripts
+- `v1/` — Read-only archive of the original Node.js/Express version
 
 ## Guidelines
 
-- Keep modules focused — each file should do one thing
-- No commented-out code in PRs
-- Match the existing code style (no semicolons at end of module.exports, consistent spacing)
-- Test your changes manually before opening a PR
+- Follow `RULE.md`: typed errors with `thiserror`, no `unwrap()`/`expect()`/`panic!()` outside `main.rs`/`build.rs`/tests, and `///` / `//!` doc comments
+- Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` before opening a PR
+- Every bug fix must include a regression test
 
 ## Reporting bugs
 
 Open an issue with:
 1. What you expected to happen
 2. What actually happened
-3. Your OS and Node.js version
-4. Any error messages from the terminal
+3. Your OS, architecture, and `chronobase --version`
+4. Relevant logs (`RUST_LOG=debug chronobase`)
 
-## Feature requests
-
-Open an issue describing the use case before building it — happy to discuss direction first.

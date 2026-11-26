@@ -1,0 +1,861 @@
+// ChronoBase MainWindow — Native Slint UI ("Strata" Stone-Glass Design)
+
+import { Palette, Type, Space } from "./theme.slint";
+import { Icons, Icon, BrandMark } from "./icons.slint";
+import { NavItem, ToolPill } from "./components/nav_item.slint";
+import { PrimaryButton, GhostButton, DangerConfirmButton } from "./components/buttons.slint";
+import { FormField, Chip, CycleButton } from "./components/form_field.slint";
+import { ModalOverlay, ConfirmDialog, ToastMessage, ToastBanner } from "./components/modal.slint";
+import { DashboardPage, RecentBackupRow } from "./pages/dashboard.slint";
+import { ConnectionsPage, ConnectionRow } from "./pages/connections.slint";
+import { BackupsPage, BackupRow } from "./pages/backups.slint";
+import { SchedulesPage, ScheduleRow } from "./pages/schedules.slint";
+import { SetupPage } from "./pages/setup.slint";
+import { DangerPage } from "./pages/danger.slint";
+
+export { RecentBackupRow, ConnectionRow, BackupRow, ScheduleRow, ToastMessage }
+
+export component MainWindow inherits Window {
+    title: "ChronoBase";
+    icon: @image-url("../assets/icon.png");
+    preferred-width: 1180px;
+    preferred-height: 760px;
+    min-width: 900px;
+    min-height: 600px;
+    default-font-family: Palette.font-ui;
+    default-font-size: Type.body;
+    background: @linear-gradient(165deg, #1F1B19 0%, #14110F 45%, #0A0908 100%);
+
+    // Navigation & sidebar state
+    in-out property <string> active-page: "dashboard";
+    in property <int> conn-count: 0;
+    in property <bool> pg-ready: false;
+    in property <string> pg-path-text: "Checking...";
+    in property <bool> mongo-ready: false;
+    in property <string> mongo-path-text: "Checking...";
+
+    // Dashboard
+    in property <string> stat-conns: "0";
+    in property <string> stat-backups: "0";
+    in property <string> stat-rate: "no backups yet";
+    in property <string> stat-size: "0 B";
+    in property <string> stat-last: "—";
+    in property <string> stat-scheds: "0 active schedules";
+    in property <bool> backup-all-busy: false;
+    in property <[RecentBackupRow]> recent-rows: [];
+
+    // Connections
+    in property <[ConnectionRow]> connection-rows: [];
+    in property <string> conn-group-filter-label: "All Groups";
+    in property <string> conn-type-filter-label: "All Types";
+    in property <bool> backup-group-busy: false;
+
+    // Backups
+    in property <[BackupRow]> backup-rows: [];
+    in property <string> bk-group-filter-label: "All Groups";
+    in property <string> bk-type-filter-label: "All Types";
+    in property <string> bk-status-filter-label: "All Status";
+
+    // Schedules
+    in property <[ScheduleRow]> schedule-rows: [];
+
+    // Setup
+    in property <bool> recheck-busy: false;
+
+    // Toasts
+    in property <[ToastMessage]> toasts: [];
+
+    // Connection Modal state
+    in-out property <bool> conn-modal-open: false;
+    in-out property <int> conn-edit-id: -1;
+    in-out property <string> conn-form-name: "";
+    in-out property <string> conn-form-group: "Default";
+    in-out property <string> conn-form-type: "postgres";
+    in-out property <string> conn-form-url: "";
+    in-out property <string> conn-form-notes: "";
+
+    // Schedule Modal state
+    in-out property <bool> sched-modal-open: false;
+    in-out property <string> sched-form-name: "";
+    in-out property <string> sched-form-group: "All";
+    in-out property <string> sched-form-cron: "0 2 * * *";
+
+    // Restore Modal state
+    in-out property <bool> restore-modal-open: false;
+    in-out property <int> restore-backup-id: -1;
+    in-out property <string> restore-info-db: "";
+    in-out property <string> restore-info-type: "";
+    in-out property <string> restore-info-size: "";
+    in-out property <string> restore-info-date: "";
+    in-out property <string> restore-same-url-masked: "";
+    in-out property <bool> restore-has-original: false;
+    in-out property <string> restore-mode: "same";
+    in-out property <string> restore-other-url: "";
+    in-out property <bool> restore-busy: false;
+
+    // Danger Modals state
+    in-out property <bool> delete-backups-modal-open: false;
+    in-out property <string> delete-backups-input: "";
+    in-out property <bool> delete-all-modal-open: false;
+    in-out property <string> delete-all-input: "";
+
+    // Generic Confirm Modal state
+    in-out property <bool> confirm-open: false;
+    in-out property <string> confirm-title: "";
+    in-out property <string> confirm-body: "";
+    in-out property <string> confirm-label: "Confirm";
+    in-out property <bool> confirm-destructive: true;
+
+    // Callbacks
+    callback navigate(string);
+    callback backup-all();
+    callback cycle-conn-group-filter();
+    callback cycle-conn-type-filter();
+    callback backup-group();
+    callback backup-connection(int);
+    callback open-add-connection();
+    callback open-edit-connection(int);
+    callback save-connection(int, string, string, string, string, string);
+    callback request-wipe-connection(int);
+    callback request-delete-connection(int);
+
+    callback cycle-bk-group-filter();
+    callback cycle-bk-type-filter();
+    callback cycle-bk-status-filter();
+    callback open-restore-modal(int);
+    callback submit-restore(int, string, string);
+    callback request-delete-backup(int);
+
+    callback open-add-schedule();
+    callback cycle-sched-group();
+    callback save-schedule(string, string, string);
+    callback toggle-schedule(int);
+    callback request-delete-schedule(int);
+
+    callback recheck-tools();
+
+    callback submit-delete-all-backups(string);
+    callback submit-reset-everything(string);
+    callback confirm-accepted();
+    callback confirm-cancelled();
+
+    // Smooth radial ambient blooms (same-hue alpha 0 outer stop prevents hard edges)
+    Rectangle {
+        x: -root.width * 0.15;
+        y: -root.height * 0.2;
+        width: root.width * 0.75;
+        height: root.height * 0.75;
+        background: @radial-gradient(circle, rgba(214, 211, 209, 0.08) 0%, rgba(214, 211, 209, 0.0) 70%);
+    }
+
+    Rectangle {
+        x: root.width * 0.4;
+        y: root.height * 0.35;
+        width: root.width * 0.7;
+        height: root.height * 0.75;
+        background: @radial-gradient(circle, rgba(165, 216, 240, 0.05) 0%, rgba(165, 216, 240, 0.0) 70%);
+    }
+
+    HorizontalLayout {
+        // ── Sidebar ──
+        Rectangle {
+            width: Palette.sidebar-w;
+            background: Palette.sidebar-bg;
+            border-width: 1px;
+            border-color: Palette.line;
+
+            VerticalLayout {
+                // Brand header
+                Rectangle {
+                    border-width: 1px;
+                    border-color: Palette.line;
+                    VerticalLayout {
+                        padding-left: Space.s16;
+                        padding-right: Space.s16;
+                        padding-top: 18px;
+                        padding-bottom: 16px;
+                        spacing: 4px;
+
+                        HorizontalLayout {
+                            spacing: 10px;
+                            BrandMark {}
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "ChronoBase";
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.section;
+                                    font-weight: 600;
+                                    color: Palette.ink-1;
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "Backup manager";
+                            font-family: Palette.font-ui;
+                            font-size: Type.min-label;
+                            color: Palette.ink-3;
+                        }
+                    }
+                }
+
+                // Navigation (top-aligned, no dead gap)
+                VerticalLayout {
+                    vertical-stretch: 1;
+                    alignment: start;
+                    padding: Space.s12;
+                    spacing: 2px;
+
+                    Text {
+                        text: "Main";
+                        font-family: Palette.font-ui;
+                        font-size: Type.min-label;
+                        font-weight: 500;
+                        color: Palette.ink-3;
+                        height: 24px;
+                        vertical-alignment: bottom;
+                    }
+                    NavItem {
+                        label: "Dashboard";
+                        icon-path: Icons.dashboard;
+                        active: active-page == "dashboard";
+                        clicked => { active-page = "dashboard"; root.navigate("dashboard"); }
+                    }
+                    NavItem {
+                        label: "Connections";
+                        icon-path: Icons.database;
+                        active: active-page == "connections";
+                        badge-count: conn-count;
+                        clicked => { active-page = "connections"; root.navigate("connections"); }
+                    }
+                    NavItem {
+                        label: "Backups";
+                        icon-path: Icons.archive;
+                        active: active-page == "backups";
+                        clicked => { active-page = "backups"; root.navigate("backups"); }
+                    }
+
+                    Text {
+                        text: "Config";
+                        font-family: Palette.font-ui;
+                        font-size: Type.min-label;
+                        font-weight: 500;
+                        color: Palette.ink-3;
+                        height: 30px;
+                        vertical-alignment: bottom;
+                    }
+                    NavItem {
+                        label: "Schedules";
+                        icon-path: Icons.clock;
+                        active: active-page == "schedules";
+                        clicked => { active-page = "schedules"; root.navigate("schedules"); }
+                    }
+                    NavItem {
+                        label: "Setup";
+                        icon-path: Icons.wrench;
+                        active: active-page == "setup";
+                        clicked => { active-page = "setup"; root.navigate("setup"); }
+                    }
+
+                    Text {
+                        text: "Danger";
+                        font-family: Palette.font-ui;
+                        font-size: Type.min-label;
+                        font-weight: 500;
+                        color: Palette.ink-3;
+                        height: 30px;
+                        vertical-alignment: bottom;
+                    }
+                    NavItem {
+                        label: "Danger Zone";
+                        icon-path: Icons.alert;
+                        danger: true;
+                        active: active-page == "danger";
+                        clicked => { active-page = "danger"; root.navigate("danger"); }
+                    }
+                }
+
+                // Tool status pills
+                Rectangle {
+                    border-width: 1px;
+                    border-color: Palette.line;
+                    VerticalLayout {
+                        padding: Space.s16;
+                        spacing: 6px;
+                        ToolPill {
+                            label: pg-ready ? "pg_dump ready" : "pg_dump missing";
+                            ready: pg-ready;
+                        }
+                        ToolPill {
+                            label: mongo-ready ? "mongodump ready" : "mongodump missing";
+                            ready: mongo-ready;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Main Content Area ──
+        Rectangle {
+            horizontal-stretch: 1;
+
+            if active-page == "dashboard": DashboardPage {
+                stat-conns: root.stat-conns;
+                stat-backups: root.stat-backups;
+                stat-rate: root.stat-rate;
+                stat-size: root.stat-size;
+                stat-last: root.stat-last;
+                stat-scheds: root.stat-scheds;
+                backup-all-busy: root.backup-all-busy;
+                recent-rows: root.recent-rows;
+                backup-all => { root.backup-all(); }
+                navigate(p) => { active-page = p; root.navigate(p); }
+            }
+
+            if active-page == "connections": ConnectionsPage {
+                rows: root.connection-rows;
+                group-filter-label: root.conn-group-filter-label;
+                type-filter-label: root.conn-type-filter-label;
+                backup-group-busy: root.backup-group-busy;
+                add-connection => { root.open-add-connection(); }
+                cycle-group-filter => { root.cycle-conn-group-filter(); }
+                cycle-type-filter => { root.cycle-conn-type-filter(); }
+                backup-group => { root.backup-group(); }
+                backup-one(id) => { root.backup-connection(id); }
+                edit-one(id) => { root.open-edit-connection(id); }
+                wipe-one(id) => { root.request-wipe-connection(id); }
+                delete-one(id) => { root.request-delete-connection(id); }
+            }
+
+            if active-page == "backups": BackupsPage {
+                rows: root.backup-rows;
+                group-filter-label: root.bk-group-filter-label;
+                type-filter-label: root.bk-type-filter-label;
+                status-filter-label: root.bk-status-filter-label;
+                cycle-group-filter => { root.cycle-bk-group-filter(); }
+                cycle-type-filter => { root.cycle-bk-type-filter(); }
+                cycle-status-filter => { root.cycle-bk-status-filter(); }
+                open-restore(id) => { root.open-restore-modal(id); }
+                delete-backup(id) => { root.request-delete-backup(id); }
+            }
+
+            if active-page == "schedules": SchedulesPage {
+                rows: root.schedule-rows;
+                add-schedule => { root.open-add-schedule(); }
+                toggle-schedule(id) => { root.toggle-schedule(id); }
+                delete-schedule(id) => { root.request-delete-schedule(id); }
+            }
+
+            if active-page == "setup": SetupPage {
+                pg-ready: root.pg-ready;
+                pg-status-text: root.pg-path-text;
+                mongo-ready: root.mongo-ready;
+                mongo-status-text: root.mongo-path-text;
+                recheck-busy: root.recheck-busy;
+                recheck => { root.recheck-tools(); }
+            }
+
+            if active-page == "danger": DangerPage {
+                open-delete-backups => {
+                    delete-backups-input = "";
+                    delete-backups-modal-open = true;
+                }
+                open-delete-all => {
+                    delete-all-input = "";
+                    delete-all-modal-open = true;
+                }
+            }
+        }
+    }
+
+    // ── Connection Modal ──
+    ModalOverlay {
+        open: conn-modal-open;
+        modal-width: 480px;
+        backdrop-clicked => { conn-modal-open = false; }
+
+        VerticalLayout {
+            spacing: 14px;
+
+            Text {
+                text: conn-edit-id < 0 ? "Add connection" : "Edit connection";
+                font-family: Palette.font-ui;
+                font-size: Type.section;
+                font-weight: 700;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "Provide a name, group, engine type, and connection URL.";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                FormField {
+                    horizontal-stretch: 1;
+                    label: "Display name";
+                    value <=> conn-form-name;
+                    placeholder: "Production DB";
+                }
+                FormField {
+                    horizontal-stretch: 1;
+                    label: "Group";
+                    value <=> conn-form-group;
+                    placeholder: "Default";
+                }
+            }
+
+            VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Engine type";
+                    font-family: Palette.font-ui;
+                    font-size: Type.secondary;
+                    font-weight: 500;
+                    color: Palette.ink-2;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Chip {
+                        text: "PostgreSQL";
+                        selected: conn-form-type == "postgres";
+                        clicked => { conn-form-type = "postgres"; }
+                    }
+                    Chip {
+                        text: "MongoDB";
+                        selected: conn-form-type == "mongodb";
+                        clicked => { conn-form-type = "mongodb"; }
+                    }
+                }
+            }
+
+            FormField {
+                label: "Connection URL";
+                value <=> conn-form-url;
+                mono: true;
+                placeholder: conn-form-type == "postgres"
+                    ? "postgresql://user:pass@localhost:5432/mydb"
+                    : "mongodb://user:pass@localhost:27017/mydb";
+                hint: conn-form-type == "postgres"
+                    ? "postgresql://username:password@host:5432/database"
+                    : "mongodb://username:password@host:27017/database  or  mongodb+srv://...";
+            }
+
+            FormField {
+                label: "Notes (optional)";
+                value <=> conn-form-notes;
+                placeholder: "Any notes about this database...";
+            }
+
+            Rectangle { height: 1px; background: Palette.line; }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10px;
+                GhostButton {
+                    text: "Cancel";
+                    clicked => { conn-modal-open = false; }
+                }
+                PrimaryButton {
+                    text: "Save connection";
+                    clicked => {
+                        root.save-connection(
+                            conn-edit-id,
+                            conn-form-name,
+                            conn-form-group,
+                            conn-form-type,
+                            conn-form-url,
+                            conn-form-notes
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Schedule Modal ──
+    ModalOverlay {
+        open: sched-modal-open;
+        modal-width: 460px;
+        backdrop-clicked => { sched-modal-open = false; }
+
+        VerticalLayout {
+            spacing: 14px;
+
+            Text {
+                text: "New schedule";
+                font-family: Palette.font-ui;
+                font-size: Type.section;
+                font-weight: 700;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "Backups run silently in the background at your chosen local time.";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+            }
+
+            FormField {
+                label: "Schedule name";
+                value <=> sched-form-name;
+                placeholder: "Nightly Backup";
+            }
+
+            VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Target group";
+                    font-family: Palette.font-ui;
+                    font-size: Type.secondary;
+                    font-weight: 500;
+                    color: Palette.ink-2;
+                }
+                CycleButton {
+                    label: sched-form-group == "All" ? "All Connections" : sched-form-group;
+                    clicked => { root.cycle-sched-group(); }
+                }
+            }
+
+            FormField {
+                label: "Cron expression (5-field local time)";
+                value <=> sched-form-cron;
+                mono: true;
+                placeholder: "0 2 * * *";
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                Chip { text: "Daily 2am"; selected: sched-form-cron == "0 2 * * *"; clicked => { sched-form-cron = "0 2 * * *"; } }
+                Chip { text: "Every 6h"; selected: sched-form-cron == "0 */6 * * *"; clicked => { sched-form-cron = "0 */6 * * *"; } }
+                Chip { text: "Hourly"; selected: sched-form-cron == "0 * * * *"; clicked => { sched-form-cron = "0 * * * *"; } }
+                Chip { text: "Weekly Sun"; selected: sched-form-cron == "0 2 * * 0"; clicked => { sched-form-cron = "0 2 * * 0"; } }
+                Chip { text: "Monthly"; selected: sched-form-cron == "0 2 1 * *"; clicked => { sched-form-cron = "0 2 1 * *"; } }
+            }
+
+            Rectangle { height: 1px; background: Palette.line; }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10px;
+                GhostButton {
+                    text: "Cancel";
+                    clicked => { sched-modal-open = false; }
+                }
+                PrimaryButton {
+                    text: "Create schedule";
+                    clicked => {
+                        root.save-schedule(sched-form-name, sched-form-group, sched-form-cron);
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Restore Modal ──
+    ModalOverlay {
+        open: restore-modal-open;
+        modal-width: 520px;
+        backdrop-clicked => { if !restore-busy { restore-modal-open = false; } }
+
+        VerticalLayout {
+            spacing: 14px;
+
+            Text {
+                text: "Restore snapshot";
+                font-family: Palette.font-ui;
+                font-size: Type.section;
+                font-weight: 700;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "Choose where to push this backup.";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+            }
+
+            // Info grid
+            Rectangle {
+                border-radius: Palette.r-md;
+                background: Palette.tier-base;
+                border-width: 1px;
+                border-color: Palette.line;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 6px;
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Database"; font-family: Palette.font-ui; font-size: Type.secondary; color: Palette.ink-3; }
+                        Text { text: restore-info-db; font-family: Palette.font-mono; font-size: Type.secondary; color: Palette.ink-1; }
+                    }
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Engine"; font-family: Palette.font-ui; font-size: Type.secondary; color: Palette.ink-3; }
+                        Text { text: restore-info-type; font-family: Palette.font-mono; font-size: Type.secondary; color: Palette.ink-1; }
+                    }
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Size"; font-family: Palette.font-ui; font-size: Type.secondary; color: Palette.ink-3; }
+                        Text { text: restore-info-size; font-family: Palette.font-mono; font-size: Type.secondary; color: Palette.ink-1; }
+                    }
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Snapshot taken"; font-family: Palette.font-ui; font-size: Type.secondary; color: Palette.ink-3; }
+                        Text { text: restore-info-date; font-family: Palette.font-mono; font-size: Type.secondary; color: Palette.ink-1; }
+                    }
+                }
+            }
+
+            // Destination mode toggle (distinct borders & semantic colors)
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 36px;
+                    border-radius: Palette.r-sm;
+                    background: restore-mode == "same" ? Palette.bad-dim : Palette.tier-base;
+                    border-width: 1px;
+                    border-color: restore-mode == "same" ? Palette.bad-border : Palette.line;
+                    Text {
+                        text: "Same database";
+                        font-family: Palette.font-ui;
+                        font-size: Type.secondary;
+                        font-weight: 500;
+                        color: restore-mode == "same" ? Palette.bad : Palette.ink-2;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { restore-mode = "same"; }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 36px;
+                    border-radius: Palette.r-sm;
+                    background: restore-mode == "other" ? Palette.signal-dim : Palette.tier-base;
+                    border-width: 1px;
+                    border-color: restore-mode == "other" ? Palette.signal : Palette.line;
+                    Text {
+                        text: "Different database";
+                        font-family: Palette.font-ui;
+                        font-size: Type.secondary;
+                        font-weight: 500;
+                        color: restore-mode == "other" ? Palette.signal : Palette.ink-2;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { restore-mode = "other"; }
+                    }
+                }
+            }
+
+            if restore-mode == "same": VerticalLayout {
+                spacing: 12px;
+                Rectangle {
+                    border-radius: Palette.r-md;
+                    background: Palette.bad-dim;
+                    border-width: 1px;
+                    border-color: Palette.bad-border;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 3px;
+                        Text {
+                            text: "This overwrites your live database";
+                            font-family: Palette.font-ui;
+                            font-size: Type.secondary;
+                            font-weight: 600;
+                            color: Palette.bad;
+                        }
+                        Text {
+                            text: "All current data is replaced with this snapshot. Cannot be undone.";
+                            font-family: Palette.font-ui;
+                            font-size: Type.min-label;
+                            color: Palette.ink-2;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                FormField {
+                    label: "Restoring to (original)";
+                    value: restore-same-url-masked;
+                    mono: true;
+                    read-only: true;
+                }
+            }
+
+            if restore-mode == "other": VerticalLayout {
+                spacing: 12px;
+                Rectangle {
+                    border-radius: Palette.r-md;
+                    background: Palette.signal-dim;
+                    border-width: 1px;
+                    border-color: Palette.line-strong;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 3px;
+                        Text {
+                            text: "Push to a different database";
+                            font-family: Palette.font-ui;
+                            font-size: Type.secondary;
+                            font-weight: 600;
+                            color: Palette.ink-1;
+                        }
+                        Text {
+                            text: "Clone to staging, migrate servers, or test without touching production.";
+                            font-family: Palette.font-ui;
+                            font-size: Type.min-label;
+                            color: Palette.ink-2;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                FormField {
+                    label: "Target URL";
+                    value <=> restore-other-url;
+                    mono: true;
+                    placeholder: restore-info-type == "postgres"
+                        ? "postgresql://user:pass@newhost:5432/targetdb"
+                        : "mongodb://user:pass@newhost:27017/targetdb";
+                    hint: "The target database must already exist and be accessible.";
+                }
+            }
+
+            Rectangle { height: 1px; background: Palette.line; }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10px;
+                GhostButton {
+                    text: "Cancel";
+                    enabled: !restore-busy;
+                    clicked => { restore-modal-open = false; }
+                }
+                if restore-mode == "same": DangerConfirmButton {
+                    text: restore-busy ? "Restoring..." : "Overwrite & restore";
+                    enabled: !restore-busy && restore-has-original;
+                    clicked => { root.submit-restore(restore-backup-id, "same", ""); }
+                }
+                if restore-mode == "other": PrimaryButton {
+                    text: restore-busy ? "Restoring..." : "Push to target";
+                    enabled: !restore-busy;
+                    clicked => { root.submit-restore(restore-backup-id, "other", restore-other-url); }
+                }
+            }
+        }
+    }
+
+    // ── Delete Backups Modal ──
+    ModalOverlay {
+        open: delete-backups-modal-open;
+        modal-width: 440px;
+        backdrop-clicked => { delete-backups-modal-open = false; }
+
+        VerticalLayout {
+            spacing: 14px;
+            Text {
+                text: "Delete all backup files";
+                font-family: Palette.font-ui;
+                font-size: Type.section;
+                font-weight: 700;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "This will permanently remove every .sql file and MongoDB BSON folder from your disk. Your connections and schedules will not be affected.";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-2;
+                wrap: word-wrap;
+            }
+            FormField {
+                label: "Type DELETE BACKUPS to confirm";
+                value <=> delete-backups-input;
+                placeholder: "DELETE BACKUPS";
+                danger: true;
+            }
+            Rectangle { height: 1px; background: Palette.line; }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10px;
+                GhostButton { text: "Cancel"; clicked => { delete-backups-modal-open = false; } }
+                DangerConfirmButton {
+                    text: "Delete all backups";
+                    enabled: delete-backups-input == "DELETE BACKUPS";
+                    clicked => { root.submit-delete-all-backups(delete-backups-input); }
+                }
+            }
+        }
+    }
+
+    // ── Delete Everything Modal ──
+    ModalOverlay {
+        open: delete-all-modal-open;
+        modal-width: 440px;
+        backdrop-clicked => { delete-all-modal-open = false; }
+
+        VerticalLayout {
+            spacing: 14px;
+            Text {
+                text: "Reset everything";
+                font-family: Palette.font-ui;
+                font-size: Type.section;
+                font-weight: 700;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "This deletes all connections, schedules, backup history, and every backup file on disk. ChronoBase returns to a completely blank state. There is no undo.";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-2;
+                wrap: word-wrap;
+            }
+            FormField {
+                label: "Type DELETE EVERYTHING to confirm";
+                value <=> delete-all-input;
+                placeholder: "DELETE EVERYTHING";
+                danger: true;
+            }
+            Rectangle { height: 1px; background: Palette.line; }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10px;
+                GhostButton { text: "Cancel"; clicked => { delete-all-modal-open = false; } }
+                DangerConfirmButton {
+                    text: "Reset everything";
+                    enabled: delete-all-input == "DELETE EVERYTHING";
+                    clicked => { root.submit-reset-everything(delete-all-input); }
+                }
+            }
+        }
+    }
+
+    // ── Generic Confirm Dialog ──
+    ConfirmDialog {
+        open: confirm-open;
+        title: confirm-title;
+        body: confirm-body;
+        confirm-label: confirm-label;
+        destructive: confirm-destructive;
+        cancel => { confirm-open = false; root.confirm-cancelled(); }
+        confirm => { confirm-open = false; root.confirm-accepted(); }
+    }
+
+    // ── Toast Stack (bottom-right) ──
+    VerticalLayout {
+        x: parent.width - 364px;
+        y: parent.height - 24px - self.preferred-height;
+        width: 340px;
+        spacing: 8px;
+
+        for t in toasts: ToastBanner {
+            item: t;
+        }
+    }
+}

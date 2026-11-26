@@ -1,0 +1,256 @@
+// Schedules page — "Cron Register" with plain-language preset labels and switch control
+
+import { ListView } from "std-widgets.slint";
+import { Palette, Type, Space, Motion } from "../theme.slint";
+import { Icons, Icon } from "../icons.slint";
+import { PrimaryButton, DangerButton } from "../components/buttons.slint";
+import { Badge } from "../components/badge.slint";
+import { Surface } from "../components/surface.slint";
+
+export struct ScheduleRow {
+    id: int,
+    name: string,
+    group-name: string,
+    cron-expr: string,
+    enabled: bool,
+    last-run: string,
+}
+
+component ScheduleSwitch inherits Rectangle {
+    in property <bool> checked: false;
+    callback toggled();
+
+    height: 32px;
+    accessible-role: switch;
+    accessible-label: checked ? "Active" : "Paused";
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 20px;
+                border-radius: 10px;
+                background: checked ? Palette.ok-dim : Palette.tier-raised;
+                border-width: 1px;
+                border-color: checked ? Palette.ok : Palette.line-strong;
+
+                animate background { duration: Motion.micro; easing: ease-out; }
+                animate border-color { duration: Motion.micro; easing: ease-out; }
+
+                Rectangle {
+                    x: checked ? 18px : 3px;
+                    y: 3px;
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 6px;
+                    background: checked ? Palette.ok : Palette.ink-3;
+
+                    animate x { duration: Motion.micro; easing: ease-out; }
+                }
+            }
+        }
+
+        Text {
+            text: checked ? "Active" : "Paused";
+            font-family: Palette.font-ui;
+            font-size: Type.secondary;
+            font-weight: 500;
+            color: checked ? Palette.ok : Palette.ink-3;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(); }
+    }
+}
+
+export component SchedulesPage inherits VerticalLayout {
+    in property <[ScheduleRow]> rows: [];
+
+    callback add-schedule();
+    callback toggle-schedule(int);
+    callback delete-schedule(int);
+
+    padding: Space.s32;
+    spacing: Space.s24;
+
+    // Header
+    HorizontalLayout {
+        alignment: space-between;
+        spacing: Space.s16;
+        VerticalLayout {
+            spacing: 4px;
+            Text {
+                text: "Schedules";
+                font-family: Palette.font-ui;
+                font-size: Type.title;
+                font-weight: 600;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "Automated local-time cron backups";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            PrimaryButton {
+                text: "New schedule";
+                icon-path: Icons.plus;
+                clicked => { root.add-schedule(); }
+            }
+        }
+    }
+
+    Surface {
+        vertical-stretch: 1;
+
+        if rows.length == 0: VerticalLayout {
+            alignment: center;
+            spacing: Space.s12;
+            HorizontalLayout {
+                alignment: center;
+                Icon { svg-path: Icons.clock; tint: Palette.ink-3; size: 28px; }
+            }
+            Text {
+                text: "No schedules yet";
+                font-family: Palette.font-ui;
+                font-size: Type.body;
+                font-weight: 500;
+                color: Palette.ink-1;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Create a cron schedule to back up automatically.";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+                horizontal-alignment: center;
+            }
+            HorizontalLayout {
+                alignment: center;
+                PrimaryButton {
+                    text: "New schedule";
+                    icon-path: Icons.plus;
+                    clicked => { root.add-schedule(); }
+                }
+            }
+        }
+
+        if rows.length > 0: VerticalLayout {
+            Rectangle {
+                height: 38px;
+                background: Palette.tier-base;
+                border-width: 1px;
+                border-color: Palette.line;
+                HorizontalLayout {
+                    padding-left: Space.s16;
+                    padding-right: Space.s16;
+                    spacing: Space.s12;
+                    Text { text: "Schedule"; horizontal-stretch: 2; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    Text { text: "Target"; horizontal-stretch: 1; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    Text { text: "Cadence"; horizontal-stretch: 2; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    Text { text: "State"; width: 108px; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    Text { text: "Last run"; horizontal-stretch: 2; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    Text { text: ""; width: 40px; }
+                }
+            }
+
+            ListView {
+                vertical-stretch: 1;
+                for row in rows: Rectangle {
+                    height: 58px;
+                    border-width: 1px;
+                    border-color: Palette.row-divider;
+
+                    HorizontalLayout {
+                        padding-left: Space.s16;
+                        padding-right: Space.s16;
+                        spacing: Space.s12;
+
+                        Text {
+                            text: row.name;
+                            horizontal-stretch: 2;
+                            font-family: Palette.font-ui;
+                            font-size: Type.body;
+                            font-weight: 500;
+                            color: Palette.ink-1;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        HorizontalLayout {
+                            horizontal-stretch: 1;
+                            alignment: start;
+                            VerticalLayout { alignment: center; Badge { text: row.group-name; variant: "group"; } }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 2;
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: row.cron-expr;
+                                font-family: Palette.font-mono;
+                                font-size: Type.secondary;
+                                color: Palette.ink-1;
+                            }
+                            Text {
+                                text: row.cron-expr == "0 2 * * *" ? "Daily at 2:00 AM"
+                                    : row.cron-expr == "0 */6 * * *" ? "Every 6 hours"
+                                    : row.cron-expr == "0 * * * *" ? "Every hour"
+                                    : row.cron-expr == "0 2 * * 0" ? "Weekly on Sunday"
+                                    : row.cron-expr == "0 2 1 * *" ? "Monthly on the 1st"
+                                    : "Custom cron";
+                                font-family: Palette.font-ui;
+                                font-size: Type.min-label;
+                                color: Palette.ink-3;
+                            }
+                        }
+
+                        VerticalLayout {
+                            width: 108px;
+                            alignment: center;
+                            ScheduleSwitch {
+                                checked: row.enabled;
+                                toggled => { root.toggle-schedule(row.id); }
+                            }
+                        }
+
+                        Text {
+                            text: row.last-run;
+                            horizontal-stretch: 2;
+                            font-family: Palette.font-ui;
+                            font-size: Type.secondary;
+                            color: Palette.ink-3;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        HorizontalLayout {
+                            width: 40px;
+                            alignment: end;
+                            VerticalLayout {
+                                alignment: center;
+                                DangerButton {
+                                    icon-path: Icons.trash;
+                                    small: true;
+                                    a11y-label: "Delete schedule " + row.name;
+                                    clicked => { root.delete-schedule(row.id); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

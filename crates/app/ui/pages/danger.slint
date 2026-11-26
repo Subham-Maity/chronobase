@@ -1,0 +1,131 @@
+// Danger Zone page — "Vault": calm stone surface; red reserved for destructive triggers
+
+import { Palette, Type, Space } from "../theme.slint";
+import { Icons, Icon } from "../icons.slint";
+import { DangerButton } from "../components/buttons.slint";
+import { Surface } from "../components/surface.slint";
+
+export component DangerPage inherits VerticalLayout {
+    callback open-delete-backups();
+    callback open-delete-all();
+
+    padding: Space.s32;
+    spacing: Space.s24;
+    alignment: start;
+
+    VerticalLayout {
+        spacing: 4px;
+        Text {
+            text: "Danger Zone";
+            font-family: Palette.font-ui;
+            font-size: Type.title;
+            font-weight: 600;
+            color: Palette.ink-1;
+        }
+        Text {
+            text: "Irreversible actions — read carefully before proceeding";
+            font-family: Palette.font-ui;
+            font-size: Type.secondary;
+            color: Palette.ink-3;
+        }
+    }
+
+    Surface {
+        VerticalLayout {
+            // Header
+            Rectangle {
+                height: 42px;
+                background: Palette.tier-raised;
+                border-width: 1px;
+                border-color: Palette.line;
+                HorizontalLayout {
+                    padding-left: Space.s24;
+                    padding-right: Space.s24;
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon { svg-path: Icons.alert; tint: Palette.bad; size: 15px; }
+                    }
+                    Text {
+                        text: "Destructive actions";
+                        font-family: Palette.font-ui;
+                        font-size: Type.secondary;
+                        font-weight: 600;
+                        color: Palette.ink-1;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Action 1: Delete all backup files
+            Rectangle {
+                border-width: 1px;
+                border-color: Palette.row-divider;
+                HorizontalLayout {
+                    padding: Space.s24;
+                    spacing: Space.s24;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 4px;
+                        Text {
+                            text: "Delete all backup files";
+                            font-family: Palette.font-ui;
+                            font-size: Type.body;
+                            font-weight: 600;
+                            color: Palette.ink-1;
+                        }
+                        Text {
+                            text: "Permanently removes all .sql files and MongoDB BSON folders from disk and clears backup history. Connections and schedules are kept.";
+                            font-family: Palette.font-ui;
+                            font-size: Type.secondary;
+                            color: Palette.ink-3;
+                            wrap: word-wrap;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        DangerButton {
+                            text: "Delete all backups";
+                            icon-path: Icons.trash;
+                            small: true;
+                            clicked => { root.open-delete-backups(); }
+                        }
+                    }
+                }
+            }
+
+            // Action 2: Reset everything
+            HorizontalLayout {
+                padding: Space.s24;
+                spacing: Space.s24;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 4px;
+                    Text {
+                        text: "Reset everything";
+                        font-family: Palette.font-ui;
+                        font-size: Type.body;
+                        font-weight: 600;
+                        color: Palette.ink-1;
+                    }
+                    Text {
+                        text: "Deletes all connections, schedules, backup history, and every backup file on disk. ChronoBase returns to a blank state with no undo.";
+                        font-family: Palette.font-ui;
+                        font-size: Type.secondary;
+                        color: Palette.ink-3;
+                        wrap: word-wrap;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    DangerButton {
+                        text: "Reset everything";
+                        icon-path: Icons.trash;
+                        small: true;
+                        clicked => { root.open-delete-all(); }
+                    }
+                }
+            }
+        }
+    }
+}

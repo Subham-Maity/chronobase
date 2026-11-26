@@ -1,0 +1,210 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag (e.g. v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  MACOSX_DEPLOYMENT_TARGET: '11.0'
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: linux-x86_64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - name: macos-aarch64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macos-x86_64
+            os: macos-latest
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libwayland-dev \
+            libgl1-mesa-dev
+
+      - name: Set short CARGO_TARGET_DIR on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "CARGO_TARGET_DIR=D:\cb-target" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --locked -p chronobase --target ${{ matrix.target }}
+
+      - name: Package Windows
+        if: matrix.name == 'windows-x64'
+        shell: pwsh
+        run: |
+          .\scripts\package-windows.ps1 -Target ${{ matrix.target }} -OutDir dist
+          if (!(Test-Path dist\ChronoBase-windows-x64-portable.zip)) { exit 1 }
+
+      - name: Package Linux
+        if: matrix.name == 'linux-x86_64'
+        run: |
+          chmod +x scripts/package-linux.sh
+          ./scripts/package-linux.sh ${{ matrix.target }} dist
+          test -f dist/ChronoBase-linux-x86_64.tar.gz
+          test -f dist/ChronoBase-linux-x86_64.deb
+
+      - name: Package macOS Apple Silicon
+        if: matrix.name == 'macos-aarch64'
+        run: |
+          chmod +x scripts/package-macos.sh
+          ./scripts/package-macos.sh ${{ matrix.target }} arm64 dist
+          test -f dist/ChronoBase-macos-arm64.dmg
+          test -f dist/ChronoBase-macos-arm64.app.tar.gz
+          dist/ChronoBase.app/Contents/MacOS/chronobase --version
+
+      - name: Package macOS Intel (cross-compiled, build-only)
+        if: matrix.name == 'macos-x86_64'
+        run: |
+          chmod +x scripts/package-macos.sh
+          ./scripts/package-macos.sh ${{ matrix.target }} x64 dist
+          test -f dist/ChronoBase-macos-x64.dmg
+          test -f dist/ChronoBase-macos-x64.app.tar.gz
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.name }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.dmg
+          if-no-files-found: error
+
+  publish:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS.txt
+        working-directory: artifacts
+        run: |
+          sha256sum ChronoBase-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Generate release notes
+        env:
+          TAG: ${{ inputs.tag_name || github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          VERSION="${TAG#v}"
+          CHANGELOG_BODY=$(awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md)
+
+          if [ -z "$CHANGELOG_BODY" ]; then
+            CHANGELOG_BODY="Native Rust release of ChronoBase v${VERSION}."
+          fi
+
+          cat <<EOF > release-notes.md
+          # ChronoBase ${TAG}
+
+          ChronoBase is the native Rust rewrite of the [v1 Node.js version](https://github.com/${REPO}/tree/main/v1) — a local-first backup manager for PostgreSQL and MongoDB. Zero cloud, tiny footprint, fast startup, and full compatibility with v1 \`chronobase-data.json\` files.
+
+          ## What's New in ${TAG}
+
+          ${CHANGELOG_BODY}
+
+          ## Downloads & Platform Support
+
+          | Platform | Package / Archive | Notes |
+          |---|---|---|
+          | Windows x64 | \`ChronoBase-windows-x64-portable.zip\` | Portable executable + docs |
+          | Linux x86_64 | \`ChronoBase-linux-x86_64.tar.gz\`, \`ChronoBase-linux-x86_64.deb\` | X11 & Wayland via Slint winit |
+          | macOS Apple Silicon | \`ChronoBase-macos-arm64.dmg\`, \`ChronoBase-macos-arm64.app.tar.gz\` | Native \`aarch64-apple-darwin\` |
+          | macOS Intel | \`ChronoBase-macos-x64.dmg\`, \`ChronoBase-macos-x64.app.tar.gz\` | Cross-compiled (build-only, not tested on Intel hardware) |
+
+          ## Verify Downloads (SHA256SUMS.txt)
+
+          **Linux / macOS:**
+          \`\`\`bash
+          sha256sum -c SHA256SUMS.txt --ignore-missing
+          \`\`\`
+
+          **Windows (PowerShell):**
+          \`\`\`powershell
+          Get-FileHash .\ChronoBase-windows-x64-portable.zip -Algorithm SHA256
+          \`\`\`
+
+          ## Platform Notes
+
+          - **Database CLI tools:** \`pg_dump\`, \`psql\`, \`mongodump\`, \`mongorestore\`, and \`mongosh\` are not bundled. See the [Setup section in README.md](https://github.com/${REPO}/blob/${TAG}/README.md#prerequisites).
+          - **Where data lives:** If \`chronobase-data.json\` exists next to the executable or in the current working directory, ChronoBase runs in portable mode; otherwise it uses your OS user data directory (override with \`--data-dir\` or \`CHRONOBASE_HOME\`).
+          - **Windows SmartScreen:** Builds are unsigned; click **More info -> Run anyway** if prompted.
+          - **macOS Gatekeeper:** Right-click -> **Open**, or run \`xattr -cr /Applications/ChronoBase.app\`.
+          - **Linux dependencies:** Requires \`libfontconfig1\`, \`libxkbcommon0\`, \`libxkbcommon-x11-0\`, and \`libgl1\` (for the default OpenGL renderer). Both X11 and Wayland are supported.
+          - **Headless / Auto-start:** Run \`chronobase --headless\` from systemd, launchd, or Windows Task Scheduler to execute scheduled backups without opening a window.
+
+          Built with [Slint](https://slint.dev).
+
+          Full Changelog: https://github.com/${REPO}/blob/${TAG}/CHANGELOG.md
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name || github.ref_name }}
+          name: ChronoBase ${{ inputs.tag_name || github.ref_name }}
+          body_path: release-notes.md
+          files: |
+            artifacts/ChronoBase-*
+            artifacts/SHA256SUMS.txt
+          draft: false
+          prerelease: false
+

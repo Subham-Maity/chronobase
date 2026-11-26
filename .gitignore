@@ -1,6 +1,9 @@
 node_modules/
 
 chronobase-data.json
+chronobase-data.json.tmp
+chronobase-data.json.corrupt-*
+chronobase.lock
 
 backups/
 
@@ -20,3 +23,8 @@ desktop.ini
 .idea/
 *.suo
 *.user
+
+target/
+reference/
+PLAN.md
+TASK.md

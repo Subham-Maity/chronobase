@@ -1,0 +1,197 @@
+// Form inputs, chips, and honest cycle filter controls
+
+import { Palette, Type, Motion } from "../theme.slint";
+import { Icon, Icons } from "../icons.slint";
+
+export component FormField inherits VerticalLayout {
+    in property <string> label;
+    in-out property <string> value;
+    in property <string> placeholder: "";
+    in property <string> hint: "";
+    in property <bool> mono: false;
+    in property <bool> read-only: false;
+    in property <bool> danger: false;
+    callback edited(string);
+
+    forward-focus: input;
+    spacing: 6px;
+
+    Text {
+        text: label;
+        font-family: Palette.font-ui;
+        font-size: Type.secondary;
+        font-weight: 500;
+        color: Palette.ink-2;
+    }
+
+    Rectangle {
+        height: 40px;
+        border-radius: Palette.r-sm;
+        background: danger ? rgba(12, 10, 9, 0.95) : Palette.input-bg;
+        border-width: input.has-focus ? 2px : 1px;
+        border-color: input.has-focus ? (danger ? Palette.bad : Palette.signal)
+            : danger ? Palette.bad-border
+            : Palette.line-strong;
+        opacity: read-only ? 0.65 : 1.0;
+
+        animate border-color { duration: Motion.micro; easing: ease-out; }
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+
+            input := TextInput {
+                text <=> root.value;
+                font-family: mono || danger ? Palette.font-mono : Palette.font-ui;
+                font-size: mono ? Type.secondary : Type.body;
+                color: danger ? Palette.bad : Palette.ink-1;
+                selection-background-color: Palette.signal-dim;
+                vertical-alignment: center;
+                read-only: root.read-only;
+                edited => { root.edited(self.text); }
+            }
+        }
+
+        if root.value == "" && placeholder != "": Text {
+            x: 12px;
+            text: placeholder;
+            font-family: mono || danger ? Palette.font-mono : Palette.font-ui;
+            font-size: mono ? Type.secondary : Type.body;
+            color: Palette.ink-3;
+            vertical-alignment: center;
+            height: parent.height;
+        }
+    }
+
+    if hint != "": Text {
+        text: hint;
+        font-family: Palette.font-ui;
+        font-size: Type.min-label;
+        color: Palette.ink-3;
+        wrap: word-wrap;
+    }
+}
+
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected: false;
+    callback clicked();
+
+    height: 30px;
+    border-radius: Palette.r-sm;
+    background: selected ? Palette.signal-dim
+        : touch.has-hover ? Palette.tier-hover
+        : Palette.tier-base;
+    border-width: 1px;
+    border-color: selected ? Palette.signal : Palette.line-strong;
+    accessible-role: button;
+    accessible-label: text;
+
+    animate background { duration: Motion.micro; easing: ease-out; }
+    animate border-color { duration: Motion.micro; easing: ease-out; }
+
+    if focus.has-focus: Rectangle {
+        x: -2px;
+        y: -2px;
+        width: parent.width + 4px;
+        height: parent.height + 4px;
+        border-radius: parent.border-radius + 2px;
+        border-width: 2px;
+        border-color: Palette.signal;
+    }
+
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 11px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            font-family: Palette.font-ui;
+            font-size: Type.min-label;
+            font-weight: selected ? 600 : 500;
+            color: selected ? Palette.signal : Palette.ink-2;
+            vertical-alignment: center;
+        }
+    }
+
+    focus := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == " ") {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component CycleButton inherits Rectangle {
+    in property <string> label;
+    callback clicked();
+
+    height: 34px;
+    border-radius: Palette.r-sm;
+    background: touch.has-hover ? Palette.tier-hover : Palette.tier-raised;
+    border-width: 1px;
+    border-color: touch.has-hover ? Palette.line-strong : Palette.line;
+    accessible-role: button;
+    accessible-label: "Cycle filter: " + label;
+
+    animate background { duration: Motion.micro; easing: ease-out; }
+    animate border-color { duration: Motion.micro; easing: ease-out; }
+
+    if focus.has-focus: Rectangle {
+        x: -2px;
+        y: -2px;
+        width: parent.width + 4px;
+        height: parent.height + 4px;
+        border-radius: parent.border-radius + 2px;
+        border-width: 2px;
+        border-color: Palette.signal;
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+        alignment: center;
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                svg-path: Icons.cycle;
+                size: 13px;
+                tint: Palette.ink-3;
+            }
+        }
+
+        Text {
+            text: label;
+            font-family: Palette.font-ui;
+            font-size: Type.secondary;
+            color: Palette.ink-2;
+            vertical-alignment: center;
+        }
+    }
+
+    focus := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == " ") {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}

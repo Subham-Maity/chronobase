@@ -1,0 +1,91 @@
+// ChronoBase "Strata" Design System — Warm Stone Neutrals + Cold Ice Signal
+
+import "./fonts/Geist-Regular.ttf";
+import "./fonts/Geist-Medium.ttf";
+import "./fonts/Geist-SemiBold.ttf";
+import "./fonts/Geist-Bold.ttf";
+import "./fonts/GeistMono-Regular.ttf";
+import "./fonts/GeistMono-Medium.ttf";
+
+export global Palette {
+    // Stone neutral ramp
+    out property <color> void: #0A0908;
+    out property <color> stone-950: #14110F;
+    out property <color> stone-900: #1C1917;
+    out property <color> stone-800: #292524;
+    out property <color> stone-700: #44403C;
+
+    // Tonal surface tiers (Slint has no backdrop-filter; uses layered stone + alpha hairlines)
+    out property <color> tier-base: rgba(255, 255, 255, 0.03);
+    out property <color> tier-raised: rgba(255, 255, 255, 0.06);
+    out property <color> tier-hover: rgba(255, 255, 255, 0.09);
+    out property <color> tier-float: #1C1917;
+    out property <color> sidebar-bg: rgba(16, 14, 13, 0.94);
+    out property <color> input-bg: rgba(12, 10, 9, 0.90);
+
+    // Hairline borders
+    out property <color> line: rgba(245, 245, 244, 0.08);
+    out property <color> line-strong: rgba(245, 245, 244, 0.14);
+    out property <color> line-highlight: rgba(255, 255, 255, 0.20);
+    out property <color> row-divider: rgba(245, 245, 244, 0.05);
+
+    // Ink hierarchy (measured >= 7:1 for body, >= 4.5:1 for secondary on stone-900/void)
+    out property <color> ink-1: #F5F5F4;
+    out property <color> ink-2: #D6D3D1;
+    out property <color> ink-3: #A8A29E;
+
+    // Cold light accent (focus ring, active nav marker, freshest strata layer, busy progress)
+    out property <color> signal: #A5D8F0;
+    out property <color> signal-dim: rgba(165, 216, 240, 0.12);
+    out property <color> on-signal: #0C0A09;
+
+    // Semantic status (icon + word + subtle 12% tint)
+    out property <color> ok: #9AD7B0;
+    out property <color> ok-dim: rgba(154, 215, 176, 0.12);
+    out property <color> ok-border: rgba(154, 215, 176, 0.25);
+
+    out property <color> warn: #E9B872;
+    out property <color> warn-dim: rgba(233, 184, 114, 0.12);
+    out property <color> warn-border: rgba(233, 184, 114, 0.25);
+
+    out property <color> bad: #F28B7D;
+    out property <color> bad-dim: rgba(242, 139, 125, 0.12);
+    out property <color> bad-border: rgba(242, 139, 125, 0.25);
+    out property <color> bad-solid: #DC2626;
+    out property <color> bad-solid-dark: #991B1B;
+
+    // Radii & layout
+    out property <length> r-sm: 8px;
+    out property <length> r-md: 12px;
+    out property <length> r-lg: 16px;
+    out property <length> sidebar-w: 224px;
+
+    // Typography
+    out property <string> font-ui: "Geist";
+    out property <string> font-mono: "Geist Mono";
+}
+
+export global Type {
+    out property <length> title: 30px;
+    out property <length> hero: 42px;
+    out property <length> section: 16px;
+    out property <length> body: 14px;
+    out property <length> secondary: 13px;
+    out property <length> min-label: 12px;
+}
+
+export global Space {
+    out property <length> s4: 4px;
+    out property <length> s8: 8px;
+    out property <length> s12: 12px;
+    out property <length> s16: 16px;
+    out property <length> s24: 24px;
+    out property <length> s32: 32px;
+}
+
+export global Motion {
+    out property <float> scale: 1.0;
+    out property <duration> micro: 140ms;
+    out property <duration> element: 240ms;
+    out property <duration> base: 300ms;
+}

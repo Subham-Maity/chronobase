@@ -1,0 +1,26 @@
+// Tonal surface primitive with 1px border and top highlight hairline
+
+import { Palette } from "../theme.slint";
+
+export component Surface inherits Rectangle {
+    in property <bool> raised: false;
+
+    border-radius: Palette.r-lg;
+    background: raised
+        ? @linear-gradient(160deg, rgba(255, 255, 255, 0.075) 0%, rgba(255, 255, 255, 0.03) 100%)
+        : @linear-gradient(160deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%);
+    border-width: 1px;
+    border-color: Palette.line;
+    clip: true;
+
+    // 1px top highlight hairline
+    Rectangle {
+        y: 0px;
+        x: parent.border-radius;
+        width: max(0px, parent.width - 2 * parent.border-radius);
+        height: 1px;
+        background: @linear-gradient(90deg, transparent 0%, Palette.line-highlight 50%, transparent 100%);
+    }
+
+    @children
+}

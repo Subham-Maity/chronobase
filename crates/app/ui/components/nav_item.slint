@@ -1,0 +1,142 @@
+// Sidebar navigation item and tool status pill components
+
+import { Palette, Type, Motion } from "../theme.slint";
+import { Icon } from "../icons.slint";
+
+export component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <string> icon-path;
+    in property <bool> active: false;
+    in property <bool> danger: false;
+    in property <int> badge-count: -1;
+    callback clicked();
+
+    height: 36px;
+    border-radius: Palette.r-sm;
+    background: active ? Palette.tier-raised
+        : touch.has-hover ? Palette.tier-base
+        : transparent;
+    border-width: active ? 1px : 0px;
+    border-color: Palette.line;
+    accessible-role: button;
+    accessible-label: label;
+
+    animate background { duration: Motion.micro; easing: ease-out; }
+
+    // 2px signal focus ring
+    if focus.has-focus: Rectangle {
+        x: -2px;
+        y: -2px;
+        width: parent.width + 4px;
+        height: parent.height + 4px;
+        border-radius: parent.border-radius + 2px;
+        border-width: 2px;
+        border-color: Palette.signal;
+    }
+
+    // Active left marker (signal for normal, bad for danger)
+    if active: Rectangle {
+        x: 0px;
+        y: (parent.height - 18px) / 2;
+        width: 2px;
+        height: 18px;
+        border-radius: 1px;
+        background: danger ? Palette.bad : Palette.signal;
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 10px;
+        alignment: start;
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                svg-path: icon-path;
+                size: 15px;
+                tint: danger
+                    ? (active || touch.has-hover ? Palette.bad : Palette.ink-3)
+                    : (active ? Palette.ink-1 : touch.has-hover ? Palette.ink-1 : Palette.ink-3);
+            }
+        }
+
+        Text {
+            text: label;
+            font-family: Palette.font-ui;
+            font-size: Type.body;
+            font-weight: active ? 600 : 500;
+            color: danger
+                ? (active || touch.has-hover ? Palette.bad : Palette.ink-3)
+                : (active ? Palette.ink-1 : touch.has-hover ? Palette.ink-1 : Palette.ink-2);
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        if badge-count >= 0: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                height: 20px;
+                min-width: 22px;
+                border-radius: 10px;
+                background: Palette.tier-raised;
+                border-width: 1px;
+                border-color: Palette.line-strong;
+                HorizontalLayout {
+                    padding-left: 7px;
+                    padding-right: 7px;
+                    alignment: center;
+                    Text {
+                        text: badge-count;
+                        font-family: Palette.font-mono;
+                        font-size: Type.min-label;
+                        font-weight: 500;
+                        color: Palette.ink-1;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+
+    focus := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == " ") {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component ToolPill inherits HorizontalLayout {
+    in property <string> label;
+    in property <bool> ready: false;
+
+    spacing: 8px;
+    height: 20px;
+
+    VerticalLayout {
+        alignment: center;
+        Rectangle {
+            width: 7px;
+            height: 7px;
+            border-radius: 4px;
+            background: ready ? Palette.ok : Palette.bad;
+        }
+    }
+
+    Text {
+        text: label;
+        font-family: Palette.font-ui;
+        font-size: Type.min-label;
+        color: ready ? Palette.ink-2 : Palette.ink-3;
+        vertical-alignment: center;
+    }
+}

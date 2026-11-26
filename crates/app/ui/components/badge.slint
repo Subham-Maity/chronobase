@@ -1,0 +1,61 @@
+// Semantic status and neutral engine/group badges (icon + word + subtle tint)
+
+import { Palette, Type } from "../theme.slint";
+import { Icon, Icons } from "../icons.slint";
+
+export component Badge inherits Rectangle {
+    in property <string> text;
+    // "pg", "mongo", "group", "success", "failed", "amber"
+    in property <string> variant: "group";
+
+    height: 24px;
+    border-radius: 6px;
+    border-width: 1px;
+    accessible-role: text;
+    accessible-label: text;
+
+    background: variant == "success" ? Palette.ok-dim
+        : variant == "failed" ? Palette.bad-dim
+        : variant == "amber" ? Palette.warn-dim
+        : Palette.tier-raised;
+
+    border-color: variant == "success" ? Palette.ok-border
+        : variant == "failed" ? Palette.bad-border
+        : variant == "amber" ? Palette.warn-border
+        : Palette.line;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 5px;
+        alignment: center;
+
+        if variant == "success" || variant == "failed" || variant == "amber" || variant == "pg" || variant == "mongo": VerticalLayout {
+            alignment: center;
+            Icon {
+                size: 12px;
+                svg-path: variant == "success" ? Icons.check
+                    : variant == "failed" ? Icons.close
+                    : variant == "amber" ? Icons.alert
+                    : variant == "pg" ? Icons.database
+                    : Icons.archive;
+                tint: variant == "success" ? Palette.ok
+                    : variant == "failed" ? Palette.bad
+                    : variant == "amber" ? Palette.warn
+                    : Palette.ink-2;
+            }
+        }
+
+        Text {
+            text: root.text;
+            font-family: Palette.font-ui;
+            font-size: Type.min-label;
+            font-weight: 500;
+            color: variant == "success" ? Palette.ok
+                : variant == "failed" ? Palette.bad
+                : variant == "amber" ? Palette.warn
+                : Palette.ink-2;
+            vertical-alignment: center;
+        }
+    }
+}

@@ -1,0 +1,387 @@
+// Dashboard page — Signature "Strata" layout:
+// Status sentence + Back up all, 3 unboxed mono figures, and stacked sediment snapshot layers.
+
+import { ListView } from "std-widgets.slint";
+import { Palette, Type, Space, Motion } from "../theme.slint";
+import { Icons, Icon } from "../icons.slint";
+import { PrimaryButton, GhostButton } from "../components/buttons.slint";
+import { Surface } from "../components/surface.slint";
+import { Badge } from "../components/badge.slint";
+
+export struct RecentBackupRow {
+    id: int,
+    connection-name: string,
+    group-name: string,
+    db-type: string,
+    status: string,
+    size-text: string,
+    when-text: string,
+}
+
+export component DashboardPage inherits VerticalLayout {
+    in property <string> stat-conns: "0";
+    in property <string> stat-backups: "0";
+    in property <string> stat-rate: "no backups yet";
+    in property <string> stat-size: "0 B";
+    in property <string> stat-last: "—";
+    in property <string> stat-scheds: "0 active schedules";
+    in property <bool> backup-all-busy: false;
+    in property <[RecentBackupRow]> recent-rows: [];
+
+    callback backup-all();
+    callback navigate(string);
+
+    property <bool> last-failed: recent-rows.length > 0 && recent-rows[0].status == "failed";
+    property <string> status-sentence: stat-backups == "0"
+        ? "No backups yet."
+        : last-failed
+            ? "Last backup failed."
+            : "Protected. Last backup " + stat-last + ".";
+
+    padding: Space.s32;
+    spacing: Space.s24;
+
+    // ── Header: Status sentence + primary CTA ──
+    VerticalLayout {
+        spacing: Space.s12;
+
+        HorizontalLayout {
+            alignment: space-between;
+            spacing: Space.s16;
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 4px;
+
+                Text {
+                    text: status-sentence;
+                    font-family: Palette.font-ui;
+                    font-size: Type.title;
+                    font-weight: 600;
+                    color: last-failed ? Palette.bad : Palette.ink-1;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: stat-scheds + " · " + stat-rate;
+                    font-family: Palette.font-ui;
+                    font-size: Type.secondary;
+                    color: Palette.ink-3;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                PrimaryButton {
+                    text: backup-all-busy ? "Backing up..." : "Back up all";
+                    icon-path: Icons.bolt;
+                    enabled: !backup-all-busy;
+                    a11y-label: "Back up all connections";
+                    clicked => { root.backup-all(); }
+                }
+            }
+        }
+
+        // Honest indeterminate progress bar (active ONLY while backup-all-busy is true)
+        if backup-all-busy: Rectangle {
+            height: 3px;
+            border-radius: 2px;
+            background: Palette.tier-raised;
+            clip: true;
+
+            Rectangle {
+                width: parent.width * 0.28;
+                height: 3px;
+                border-radius: 2px;
+                background: Palette.signal;
+                x: -self.width + (parent.width + self.width) * mod(animation-tick() / 1.2s, 1.0);
+            }
+        }
+    }
+
+    // ── Three unboxed mono figures (no cards, no borders, no clipped text) ──
+    HorizontalLayout {
+        spacing: Space.s32;
+
+        VerticalLayout {
+            spacing: 2px;
+            Text {
+                text: stat-conns;
+                font-family: Palette.font-mono;
+                font-size: Type.hero;
+                font-weight: 500;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "Databases tracked";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+            }
+        }
+
+        VerticalLayout {
+            spacing: 2px;
+            Text {
+                text: stat-backups;
+                font-family: Palette.font-mono;
+                font-size: Type.hero;
+                font-weight: 500;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "Total snapshots";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+            }
+        }
+
+        VerticalLayout {
+            spacing: 2px;
+            Text {
+                text: stat-size;
+                font-family: Palette.font-mono;
+                font-size: Type.hero;
+                font-weight: 500;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "Local storage";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+            }
+        }
+
+        Rectangle { horizontal-stretch: 1; }
+    }
+
+    // ── Strata Stack: Recent Snapshots ──
+    VerticalLayout {
+        vertical-stretch: 1;
+        spacing: Space.s12;
+
+        HorizontalLayout {
+            alignment: space-between;
+            Text {
+                text: "Recent snapshots";
+                font-family: Palette.font-ui;
+                font-size: Type.section;
+                font-weight: 600;
+                color: Palette.ink-1;
+            }
+            if recent-rows.length > 0: GhostButton {
+                text: "View all";
+                small: true;
+                clicked => { root.navigate("backups"); }
+            }
+        }
+
+        Surface {
+            vertical-stretch: 1;
+            min-height: 180px;
+
+            // Empty state: drawn node-to-ghost-node scene + 1 CTA
+            if recent-rows.length == 0: VerticalLayout {
+                alignment: center;
+                spacing: Space.s16;
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 12px;
+
+                    // Active DB node
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            border-radius: 18px;
+                            background: Palette.tier-raised;
+                            border-width: 1px;
+                            border-color: Palette.line-strong;
+                            Icon {
+                                svg-path: Icons.database;
+                                tint: Palette.ink-2;
+                                size: 16px;
+                            }
+                        }
+                    }
+
+                    // Dotted line
+                    VerticalLayout {
+                        alignment: center;
+                        Path {
+                            width: 64px;
+                            height: 4px;
+                            viewbox-x: 0;
+                            viewbox-y: 0;
+                            viewbox-width: 64;
+                            viewbox-height: 4;
+                            commands: "M2 2 L10 2 M18 2 L26 2 M34 2 L42 2 M50 2 L58 2";
+                            stroke: Palette.ink-3;
+                            stroke-width: 1.5px;
+                            stroke-line-cap: round;
+                        }
+                    }
+
+                    // Ghost snapshot node
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            border-radius: 18px;
+                            background: transparent;
+                            border-width: 1px;
+                            border-color: Palette.signal;
+                            Icon {
+                                svg-path: Icons.archive;
+                                tint: Palette.signal;
+                                size: 16px;
+                            }
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "No snapshots layered yet";
+                        font-family: Palette.font-ui;
+                        font-size: Type.body;
+                        font-weight: 500;
+                        color: Palette.ink-1;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: "Add a PostgreSQL or MongoDB connection to start building your backup strata.";
+                        font-family: Palette.font-ui;
+                        font-size: Type.secondary;
+                        color: Palette.ink-3;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    PrimaryButton {
+                        text: "Add a database";
+                        icon-path: Icons.plus;
+                        clicked => { root.navigate("connections"); }
+                    }
+                }
+            }
+
+            if recent-rows.length > 0: ListView {
+                vertical-stretch: 1;
+
+                for row[idx] in recent-rows: Rectangle {
+                    height: 52px;
+                    // Sediment tone fades with age (newest brightest, older deeper)
+                    background: idx == 0 ? rgba(255, 255, 255, 0.085)
+                        : idx == 1 ? rgba(255, 255, 255, 0.065)
+                        : idx == 2 ? rgba(255, 255, 255, 0.050)
+                        : idx == 3 ? rgba(255, 255, 255, 0.038)
+                        : rgba(255, 255, 255, 0.025);
+                    border-width: 1px;
+                    border-color: Palette.row-divider;
+
+                    // Freshest strata layer edged with cold ice signal (or bad if failed)
+                    if idx == 0: Rectangle {
+                        x: 0px;
+                        y: 6px;
+                        width: 3px;
+                        height: parent.height - 12px;
+                        border-radius: 2px;
+                        background: row.status == "failed" ? Palette.bad : Palette.signal;
+                    }
+
+                    // Small fracture notch on failed layer
+                    if row.status == "failed": Path {
+                        x: 10px;
+                        y: 0px;
+                        width: 16px;
+                        height: 8px;
+                        viewbox-x: 0;
+                        viewbox-y: 0;
+                        viewbox-width: 16;
+                        viewbox-height: 8;
+                        commands: "M0 0 L6 5 L10 2 L16 0";
+                        fill: transparent;
+                        stroke: Palette.bad;
+                        stroke-width: 1.5px;
+                    }
+
+                    HorizontalLayout {
+                        padding-left: Space.s16;
+                        padding-right: Space.s16;
+                        spacing: Space.s12;
+
+                        VerticalLayout {
+                            alignment: center;
+                            Icon {
+                                svg-path: row.db-type == "postgres" ? Icons.database : Icons.archive;
+                                tint: Palette.ink-2;
+                                size: 15px;
+                            }
+                        }
+
+                        Text {
+                            text: row.connection-name;
+                            horizontal-stretch: 3;
+                            font-family: Palette.font-ui;
+                            font-size: Type.body;
+                            font-weight: 500;
+                            color: Palette.ink-1;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        HorizontalLayout {
+                            horizontal-stretch: 2;
+                            alignment: start;
+                            VerticalLayout {
+                                alignment: center;
+                                Badge { text: row.group-name; variant: "group"; }
+                            }
+                        }
+
+                        Text {
+                            text: row.when-text;
+                            horizontal-stretch: 1;
+                            font-family: Palette.font-ui;
+                            font-size: Type.secondary;
+                            color: Palette.ink-3;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: row.size-text;
+                            width: 80px;
+                            horizontal-alignment: right;
+                            font-family: Palette.font-mono;
+                            font-size: Type.secondary;
+                            color: Palette.ink-2;
+                            vertical-alignment: center;
+                        }
+
+                        HorizontalLayout {
+                            width: 108px;
+                            alignment: end;
+                            VerticalLayout {
+                                alignment: center;
+                                Badge {
+                                    text: row.status == "success" ? "Succeeded" : "Failed";
+                                    variant: row.status == "success" ? "success" : "failed";
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

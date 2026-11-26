@@ -1,0 +1,275 @@
+// Setup page — "OS Workbench" with segmented OS selector, copyable >=13px commands,
+// live tool status, and required Slint attribution footer.
+
+import { ScrollView } from "std-widgets.slint";
+import { Palette, Type, Space } from "../theme.slint";
+import { Icons, Icon } from "../icons.slint";
+import { GhostButton } from "../components/buttons.slint";
+import { Chip } from "../components/form_field.slint";
+import { Surface } from "../components/surface.slint";
+
+component CopyableCommand inherits Rectangle {
+    in property <string> command;
+
+    height: 36px;
+    border-radius: Palette.r-sm;
+    background: Palette.input-bg;
+    border-width: 1px;
+    border-color: Palette.line;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        TextInput {
+            text: command;
+            read-only: true;
+            font-family: Palette.font-mono;
+            font-size: Type.secondary;
+            color: Palette.ink-1;
+            selection-background-color: Palette.signal-dim;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component ToolStatusBanner inherits Rectangle {
+    in property <bool> ready;
+    in property <string> text;
+
+    min-height: 38px;
+    border-radius: Palette.r-sm;
+    background: ready ? Palette.ok-dim : Palette.bad-dim;
+    border-width: 1px;
+    border-color: ready ? Palette.ok-border : Palette.bad-border;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 8px;
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                svg-path: ready ? Icons.check : Icons.alert;
+                tint: ready ? Palette.ok : Palette.bad;
+                size: 14px;
+            }
+        }
+
+        Text {
+            text: root.text;
+            font-family: Palette.font-ui;
+            font-size: Type.secondary;
+            font-weight: 500;
+            color: ready ? Palette.ok : Palette.bad;
+            wrap: word-wrap;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component SetupPage inherits VerticalLayout {
+    in property <bool> pg-ready: false;
+    in property <string> pg-status-text: "Checking...";
+    in property <bool> mongo-ready: false;
+    in property <string> mongo-status-text: "Checking...";
+    in property <bool> recheck-busy: false;
+
+    property <string> selected-os: "windows";
+
+    callback recheck();
+
+    padding: Space.s32;
+    spacing: Space.s24;
+
+    // Header
+    HorizontalLayout {
+        alignment: space-between;
+        spacing: Space.s16;
+        VerticalLayout {
+            spacing: 4px;
+            Text {
+                text: "Setup";
+                font-family: Palette.font-ui;
+                font-size: Type.title;
+                font-weight: 600;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "Install and verify PostgreSQL and MongoDB CLI tools";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            GhostButton {
+                text: recheck-busy ? "Checking..." : "Re-check";
+                icon-path: Icons.refresh;
+                enabled: !recheck-busy;
+                clicked => { root.recheck(); }
+            }
+        }
+    }
+
+    // OS Segmented Control
+    HorizontalLayout {
+        spacing: Space.s8;
+        alignment: start;
+        Text {
+            text: "Platform:";
+            font-family: Palette.font-ui;
+            font-size: Type.secondary;
+            color: Palette.ink-3;
+            vertical-alignment: center;
+        }
+        Chip { text: "Windows"; selected: selected-os == "windows"; clicked => { selected-os = "windows"; } }
+        Chip { text: "macOS"; selected: selected-os == "macos"; clicked => { selected-os = "macos"; } }
+        Chip { text: "Linux"; selected: selected-os == "linux"; clicked => { selected-os = "linux"; } }
+    }
+
+    ScrollView {
+        vertical-stretch: 1;
+        VerticalLayout {
+            spacing: Space.s16;
+
+            // PostgreSQL tool panel
+            Surface {
+                raised: true;
+                VerticalLayout {
+                    padding: Space.s24;
+                    spacing: Space.s12;
+
+                    Text {
+                        text: "PostgreSQL — pg_dump & psql";
+                        font-family: Palette.font-ui;
+                        font-size: Type.section;
+                        font-weight: 600;
+                        color: Palette.ink-1;
+                    }
+
+                    ToolStatusBanner {
+                        ready: pg-ready;
+                        text: pg-status-text;
+                    }
+
+                    if selected-os == "windows": VerticalLayout {
+                        spacing: Space.s8;
+                        Text {
+                            text: "Download from postgresql.org/download/windows (Command Line Tools), then add the bin folder to PATH and verify:";
+                            font-family: Palette.font-ui;
+                            font-size: Type.secondary;
+                            color: Palette.ink-2;
+                            wrap: word-wrap;
+                        }
+                        CopyableCommand { command: "C:\\Program Files\\PostgreSQL\\18\\bin"; }
+                        CopyableCommand { command: "pg_dump --version"; }
+                    }
+
+                    if selected-os == "macos": VerticalLayout {
+                        spacing: Space.s8;
+                        Text {
+                            text: "Install libpq via Homebrew (ChronoBase also probes Homebrew's keg-only path automatically):";
+                            font-family: Palette.font-ui;
+                            font-size: Type.secondary;
+                            color: Palette.ink-2;
+                            wrap: word-wrap;
+                        }
+                        CopyableCommand { command: "brew install libpq && brew link --force libpq"; }
+                    }
+
+                    if selected-os == "linux": VerticalLayout {
+                        spacing: Space.s8;
+                        Text {
+                            text: "Install the PostgreSQL client package for your distribution:";
+                            font-family: Palette.font-ui;
+                            font-size: Type.secondary;
+                            color: Palette.ink-2;
+                            wrap: word-wrap;
+                        }
+                        CopyableCommand { command: "sudo apt install postgresql-client"; }
+                    }
+                }
+            }
+
+            // MongoDB tool panel
+            Surface {
+                raised: true;
+                VerticalLayout {
+                    padding: Space.s24;
+                    spacing: Space.s12;
+
+                    Text {
+                        text: "MongoDB — mongodump & mongorestore";
+                        font-family: Palette.font-ui;
+                        font-size: Type.section;
+                        font-weight: 600;
+                        color: Palette.ink-1;
+                    }
+
+                    ToolStatusBanner {
+                        ready: mongo-ready;
+                        text: mongo-status-text;
+                    }
+
+                    if selected-os == "windows": VerticalLayout {
+                        spacing: Space.s8;
+                        Text {
+                            text: "Download the Database Tools MSI from mongodb.com/try/download/database-tools — the installer adds tools to PATH automatically.";
+                            font-family: Palette.font-ui;
+                            font-size: Type.secondary;
+                            color: Palette.ink-2;
+                            wrap: word-wrap;
+                        }
+                        CopyableCommand { command: "mongodump --version"; }
+                    }
+
+                    if selected-os == "macos": VerticalLayout {
+                        spacing: Space.s8;
+                        Text {
+                            text: "Install MongoDB Database Tools via Homebrew:";
+                            font-family: Palette.font-ui;
+                            font-size: Type.secondary;
+                            color: Palette.ink-2;
+                            wrap: word-wrap;
+                        }
+                        CopyableCommand { command: "brew tap mongodb/brew && brew install mongodb-database-tools"; }
+                    }
+
+                    if selected-os == "linux": VerticalLayout {
+                        spacing: Space.s8;
+                        Text {
+                            text: "Install mongo-tools (or extract the official Database Tools tarball into PATH):";
+                            font-family: Palette.font-ui;
+                            font-size: Type.secondary;
+                            color: Palette.ink-2;
+                            wrap: word-wrap;
+                        }
+                        CopyableCommand { command: "sudo apt install mongo-tools"; }
+                    }
+
+                    Text {
+                        text: "MongoDB Atlas: mongodb+srv:// URLs work directly with no extra configuration.";
+                        font-family: Palette.font-ui;
+                        font-size: Type.min-label;
+                        color: Palette.ink-3;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            // Required Slint royalty-free attribution footer
+            Text {
+                text: "Built with Slint (slint.dev) — Licensed under MIT / Slint Royalty-Free / GPLv3";
+                font-family: Palette.font-ui;
+                font-size: Type.min-label;
+                color: Palette.ink-3;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
