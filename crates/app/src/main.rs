@@ -301,10 +301,7 @@ async fn wait_for_shutdown_signal() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
-        let mut sigterm = match signal(SignalKind::terminate()) {
-            Ok(s) => Some(s),
-            Err(_) => None,
-        };
+        let mut sigterm = signal(SignalKind::terminate()).ok();
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {}
             _ = async {
