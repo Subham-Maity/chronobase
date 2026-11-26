@@ -21,7 +21,7 @@ component ScheduleSwitch inherits Rectangle {
     callback toggled();
 
     height: 32px;
-    accessible-role: switch;
+    accessible-role: AccessibleRole.switch;
     accessible-label: checked ? "Active" : "Paused";
 
     HorizontalLayout {

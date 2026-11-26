@@ -18,7 +18,7 @@ export component NavItem inherits Rectangle {
         : transparent;
     border-width: active ? 1px : 0px;
     border-color: Palette.line;
-    accessible-role: button;
+    accessible-role: AccessibleRole.button;
     accessible-label: label;
 
     animate background { duration: Motion.micro; easing: ease-out; }

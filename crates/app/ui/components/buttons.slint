@@ -18,7 +18,7 @@ export component StoneButton inherits Rectangle {
     min-width: 32px;
     border-radius: Palette.r-sm;
     opacity: enabled ? 1.0 : 0.42;
-    accessible-role: button;
+    accessible-role: AccessibleRole.button;
     accessible-label: a11y-label;
 
     background: kind == "primary" ? @linear-gradient(180deg, #F5F5F4 0%, #E7E5E4 100%)

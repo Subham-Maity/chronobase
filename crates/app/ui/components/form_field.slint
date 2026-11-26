@@ -84,7 +84,7 @@ export component Chip inherits Rectangle {
         : Palette.tier-base;
     border-width: 1px;
     border-color: selected ? Palette.signal : Palette.line-strong;
-    accessible-role: button;
+    accessible-role: AccessibleRole.button;
     accessible-label: text;
 
     animate background { duration: Motion.micro; easing: ease-out; }
@@ -140,7 +140,7 @@ export component CycleButton inherits Rectangle {
     background: touch.has-hover ? Palette.tier-hover : Palette.tier-raised;
     border-width: 1px;
     border-color: touch.has-hover ? Palette.line-strong : Palette.line;
-    accessible-role: button;
+    accessible-role: AccessibleRole.button;
     accessible-label: "Cycle filter: " + label;
 
     animate background { duration: Motion.micro; easing: ease-out; }
