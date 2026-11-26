@@ -102,14 +102,17 @@ fn parse_args() -> Result<CliArgs, String> {
 /// On Windows, the release binary uses `windows_subsystem = "windows"`, which
 /// detaches from the parent console. Re-attach for CLI/headless output.
 fn attach_parent_console_if_needed(is_gui: bool) {
-    if is_gui {
-        return;
-    }
     #[cfg(windows)]
-    unsafe {
-        use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
-        // Intentionally ignore: fails if launched without a parent console (e.g. Task Scheduler).
-        let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+    if !is_gui {
+        unsafe {
+            use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
+            // Intentionally ignore: fails if launched without a parent console (e.g. Task Scheduler).
+            let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = is_gui;
     }
 }
 
