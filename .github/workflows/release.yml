@@ -155,7 +155,7 @@ jobs:
           cat <<EOF > release-notes.md
           # ChronoBase ${TAG}
 
-          ChronoBase is the native Rust rewrite of the [v1 Node.js version](https://github.com/${REPO}/tree/main/v1) — a local-first backup manager for PostgreSQL and MongoDB. Zero cloud, tiny footprint, fast startup, and full compatibility with v1 \`chronobase-data.json\` files.
+          ChronoBase is the native Rust rewrite of the [v1 Node.js version](https://github.com/${REPO}/tree/d695de0) — a local-first backup manager for PostgreSQL and MongoDB. Zero cloud, tiny footprint, fast startup, and full compatibility with v1 \`chronobase-data.json\` files.
 
           ## What's New in ${TAG}
 

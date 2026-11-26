@@ -28,3 +28,6 @@ target/
 reference/
 PLAN.md
 TASK.md
+.agent/
+RULE.md
+v1/
