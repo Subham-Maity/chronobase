@@ -128,7 +128,7 @@ flowchart LR
 - **Diagnostics & History Cap:**
   - Subprocess stderr is capped at 8 KB; timeouts are enforced (`600s` backup/restore, `60s` wipe, `5s` probe).
   - Failed backups record `error_msg` in `chronobase-data.json` and surface it in a dedicated detail strip on the **Backups** page.
-  - History retains the newest **500 entries** (matching `v1`).
+  - Failed history entries are pruned first past 500 entries; successful snapshots are never silently evicted (only removed manually or by retention).
 
 ### Performance Profile (Measured on Windows 11 x64 Release — v0.1.0 baseline)
 
@@ -318,7 +318,7 @@ Enable and start: `systemctl --user enable --now chronobase`.
 
 ```text
 <data_dir>/
-├── chronobase-data.json              ← connections, backup history (max 500), schedules, vps_peers, _seq
+├── chronobase-data.json              ← connections, backup history (500-entry failed-first cap), schedules, vps_peers, _seq
 ├── chronobase-agent.json             ← 0600 VPS pairing config (generated via `chronobase agent-init`)
 ├── chronobase.lock                   ← advisory fs4 lock preventing concurrent store corruption
 └── backups/

@@ -38,7 +38,8 @@ pub trait BackupRepository: Send + Sync {
     /// Finds a backup entry by ID.
     fn find_by_id(&self, id: u64) -> Result<Option<BackupEntry>, BackupError>;
 
-    /// Inserts a new backup entry at the front and enforces the 500-entry history cap.
+    /// Inserts a new backup entry at the front and enforces the history cap
+    /// by evicting the oldest `Failed` entries first (never dropping `Success` entries).
     fn record(&self, input: RecordBackupInput) -> Result<BackupEntry, BackupError>;
 
     /// Removes a backup entry by ID from history.
@@ -87,8 +88,26 @@ impl BackupRepository for StoreBackupRepository {
                 missing_on_disk: false,
             };
             d.backups.insert(0, entry.clone());
+            // Evict the oldest Failed entries first when exceeding BACKUP_HISTORY_CAP.
+            // Never silently drop Success entries, as doing so would orphan their
+            // backup files/directories on disk.
             if d.backups.len() > BACKUP_HISTORY_CAP {
-                d.backups.truncate(BACKUP_HISTORY_CAP);
+                let mut excess = d.backups.len() - BACKUP_HISTORY_CAP;
+                let mut idx = d.backups.len();
+                while idx > 0 && excess > 0 {
+                    idx -= 1;
+                    if d.backups[idx].status == BackupStatus::Failed {
+                        d.backups.remove(idx);
+                        excess -= 1;
+                    }
+                }
+                if d.backups.len() > BACKUP_HISTORY_CAP {
+                    tracing::warn!(
+                        count = d.backups.len(),
+                        cap = BACKUP_HISTORY_CAP,
+                        "successful backup history exceeds cap; keeping all Success entries to avoid orphaning files on disk"
+                    );
+                }
             }
             entry
         });
@@ -138,6 +157,92 @@ mod tests {
                 group_name: "Default".into(),
                 db_type: DbKind::Postgres,
                 source_kind: BackupSourceKind::Direct,
+                file_path: String::new(),
+                file_size: 0,
+                status: BackupStatus::Failed,
+                error_msg: Some("boom".into()),
+            })
+            .expect("record");
+        }
+
+        let list = repo.list().expect("list");
+        assert_eq!(list.len(), BACKUP_HISTORY_CAP);
+        assert_eq!(list[0].connection_name, "DB 504");
+        assert_eq!(list[BACKUP_HISTORY_CAP - 1].connection_name, "DB 5");
+
+        drop(store);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn failed_entries_evicted_before_success_entries() {
+        let dir = temp_dir("evict_failed_first");
+        let store = Arc::new(JsonStore::open(dir.clone()).expect("open"));
+        let repo = StoreBackupRepository::new(Arc::clone(&store));
+
+        // Record 10 Failed entries first (oldest), then 495 Success entries.
+        for i in 0..10 {
+            repo.record(RecordBackupInput {
+                connection_id: 1,
+                connection_name: format!("Fail {i}"),
+                group_name: "Default".into(),
+                db_type: DbKind::Postgres,
+                source_kind: BackupSourceKind::Direct,
+                file_path: String::new(),
+                file_size: 0,
+                status: BackupStatus::Failed,
+                error_msg: Some("err".into()),
+            })
+            .expect("record");
+        }
+        for i in 0..495 {
+            repo.record(RecordBackupInput {
+                connection_id: 1,
+                connection_name: format!("Ok {i}"),
+                group_name: "Default".into(),
+                db_type: DbKind::Postgres,
+                source_kind: BackupSourceKind::Direct,
+                file_path: format!("Default/Ok_{i}.sql"),
+                file_size: 100,
+                status: BackupStatus::Success,
+                error_msg: None,
+            })
+            .expect("record");
+        }
+
+        let list = repo.list().expect("list");
+        assert_eq!(list.len(), BACKUP_HISTORY_CAP);
+        let success_count = list
+            .iter()
+            .filter(|b| b.status == BackupStatus::Success)
+            .count();
+        let failed_count = list
+            .iter()
+            .filter(|b| b.status == BackupStatus::Failed)
+            .count();
+        assert_eq!(success_count, 495);
+        assert_eq!(failed_count, 5);
+        // Oldest failed entries (Fail 0..5) were evicted; Fail 5..10 remain.
+        assert!(list.iter().any(|b| b.connection_name == "Fail 9"));
+        assert!(!list.iter().any(|b| b.connection_name == "Fail 0"));
+
+        drop(store);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn success_entries_never_evicted_when_over_cap() {
+        let dir = temp_dir("never_evict_success");
+        let store = Arc::new(JsonStore::open(dir.clone()).expect("open"));
+        let repo = StoreBackupRepository::new(Arc::clone(&store));
+
+        for i in 0..505 {
+            repo.record(RecordBackupInput {
+                connection_id: 1,
+                connection_name: format!("DB {i}"),
+                group_name: "Default".into(),
+                db_type: DbKind::Postgres,
+                source_kind: BackupSourceKind::Direct,
                 file_path: format!("Default/DB_{i}.sql"),
                 file_size: 10,
                 status: BackupStatus::Success,
@@ -147,8 +252,9 @@ mod tests {
         }
 
         let list = repo.list().expect("list");
-        assert_eq!(list.len(), BACKUP_HISTORY_CAP);
+        assert_eq!(list.len(), 505);
         assert_eq!(list[0].connection_name, "DB 504");
+        assert_eq!(list[504].connection_name, "DB 0");
 
         drop(store);
         let _ = fs::remove_dir_all(&dir);
