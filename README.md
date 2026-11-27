@@ -5,6 +5,10 @@
 
 <img src="assets/hero-architecture.svg" alt="ChronoBase Architecture" width="880" />
 
+
+https://github.com/user-attachments/assets/b47a9f76-5efc-4c68-8528-122c70e23e44
+
+
 <br/>
 
 **ChronoBase** is the pure-Rust native desktop successor to [**ChronoBase v1 (Original Node.js Version)**](https://github.com/Subham-Maity/chronobase/tree/d695de05d8e5966a39b9e0b37e612e182ab9eb48) *(the local backup tool you'll wish you had before that incident)*.<br/>
