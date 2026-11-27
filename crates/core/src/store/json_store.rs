@@ -133,7 +133,10 @@ impl JsonStore {
 
         let lock_path = data_dir.join(LOCK_FILE_NAME);
         let lock_file = platform::open_lock_file(&lock_path)?;
-        FileExt::try_lock(&lock_file).map_err(|_| StoreError::LockHeld)?;
+        FileExt::try_lock(&lock_file).map_err(|err| match err {
+            fs4::TryLockError::WouldBlock => StoreError::LockHeld,
+            fs4::TryLockError::Error(io_err) => StoreError::Io(io_err),
+        })?;
 
         let data_file = data_dir.join(DATA_FILE_NAME);
         let mut data = load_or_recover(&data_file)?;
@@ -289,6 +292,14 @@ impl JsonStore {
                 }
             }
         })
+    }
+}
+
+impl Drop for JsonStore {
+    fn drop(&mut self) {
+        // Explicitly release the advisory lock before closing the file descriptor.
+        // Intentionally ignore: OS also releases locks when the descriptor closes.
+        let _ = FileExt::unlock(&self._lock_file);
     }
 }
 
