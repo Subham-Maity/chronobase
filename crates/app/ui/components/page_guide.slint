@@ -1,0 +1,224 @@
+// Per-tab Info (i) button and Page Guide modal explaining purpose and setup steps
+
+import { Palette, Type, Space } from "../theme.slint";
+import { Icons, Icon } from "../icons.slint";
+import { GhostButton, PrimaryButton } from "./buttons.slint";
+import { ModalOverlay } from "./modal.slint";
+
+export component PageInfoButton inherits GhostButton {
+    icon-path: Icons.info;
+    small: true;
+    a11y-label: "Page guide & setup steps";
+}
+
+export component PageGuideModal inherits ModalOverlay {
+    in property <string> guide-title: "";
+    in property <string> guide-purpose: "";
+    in property <string> step-1: "";
+    in property <string> step-2: "";
+    in property <string> step-3: "";
+    in property <string> step-4: "";
+    callback close();
+
+    modal-width: 500px;
+    backdrop-clicked => { root.close(); }
+
+    VerticalLayout {
+        spacing: Space.s16;
+
+        HorizontalLayout {
+            spacing: Space.s12;
+            Rectangle {
+                width: 38px;
+                height: 38px;
+                border-radius: Palette.r-md;
+                background: Palette.signal-dim;
+                border-width: 1px;
+                border-color: Palette.line-strong;
+                Icon {
+                    svg-path: Icons.info;
+                    tint: Palette.signal;
+                    size: 18px;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                min-width: 0px;
+                spacing: 2px;
+                Text {
+                    text: guide-title;
+                    font-family: Palette.font-ui;
+                    font-size: Type.section;
+                    font-weight: 700;
+                    color: Palette.ink-1;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: "Purpose & quick setup guide";
+                    font-family: Palette.font-ui;
+                    font-size: Type.min-label;
+                    color: Palette.ink-3;
+                }
+            }
+        }
+
+        Rectangle {
+            border-radius: Palette.r-md;
+            background: Palette.tier-base;
+            border-width: 1px;
+            border-color: Palette.line;
+            VerticalLayout {
+                padding: Space.s12;
+                Text {
+                    text: guide-purpose;
+                    font-family: Palette.font-ui;
+                    font-size: Type.secondary;
+                    color: Palette.ink-2;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: Space.s8;
+            if step-1 != "": HorizontalLayout {
+                spacing: Space.s12;
+                Rectangle {
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: Palette.signal-dim;
+                    border-width: 1px;
+                    border-color: Palette.line-strong;
+                    Text {
+                        text: "1";
+                        font-family: Palette.font-mono;
+                        font-size: Type.min-label;
+                        font-weight: 600;
+                        color: Palette.signal;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    Text {
+                        text: step-1;
+                        font-family: Palette.font-ui;
+                        font-size: Type.secondary;
+                        color: Palette.ink-2;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            if step-2 != "": HorizontalLayout {
+                spacing: Space.s12;
+                Rectangle {
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: Palette.signal-dim;
+                    border-width: 1px;
+                    border-color: Palette.line-strong;
+                    Text {
+                        text: "2";
+                        font-family: Palette.font-mono;
+                        font-size: Type.min-label;
+                        font-weight: 600;
+                        color: Palette.signal;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    Text {
+                        text: step-2;
+                        font-family: Palette.font-ui;
+                        font-size: Type.secondary;
+                        color: Palette.ink-2;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            if step-3 != "": HorizontalLayout {
+                spacing: Space.s12;
+                Rectangle {
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: Palette.signal-dim;
+                    border-width: 1px;
+                    border-color: Palette.line-strong;
+                    Text {
+                        text: "3";
+                        font-family: Palette.font-mono;
+                        font-size: Type.min-label;
+                        font-weight: 600;
+                        color: Palette.signal;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    Text {
+                        text: step-3;
+                        font-family: Palette.font-ui;
+                        font-size: Type.secondary;
+                        color: Palette.ink-2;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            if step-4 != "": HorizontalLayout {
+                spacing: Space.s12;
+                Rectangle {
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: Palette.signal-dim;
+                    border-width: 1px;
+                    border-color: Palette.line-strong;
+                    Text {
+                        text: "4";
+                        font-family: Palette.font-mono;
+                        font-size: Type.min-label;
+                        font-weight: 600;
+                        color: Palette.signal;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    Text {
+                        text: step-4;
+                        font-family: Palette.font-ui;
+                        font-size: Type.secondary;
+                        color: Palette.ink-2;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        Rectangle { height: 1px; background: Palette.line; }
+
+        HorizontalLayout {
+            alignment: end;
+            PrimaryButton {
+                text: "Got it";
+                clicked => { root.close(); }
+            }
+        }
+    }
+}

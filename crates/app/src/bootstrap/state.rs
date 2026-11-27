@@ -9,6 +9,9 @@ use chronobase_core::backup::{
     BackupRepository, BackupService, DefaultBackupService, StoreBackupRepository,
     TokioCommandRunner,
 };
+use chronobase_core::bridge::{
+    BridgeService, DefaultBridgeService, StoreVpsPeerRepository, VpsPeerRepository,
+};
 use chronobase_core::connection::{
     ConnectionRepository, ConnectionService, DefaultConnectionService, StoreConnectionRepository,
 };
@@ -32,6 +35,8 @@ pub struct AppState {
     pub backup_service: Arc<dyn BackupService>,
     /// Schedule management service.
     pub schedule_service: Arc<dyn ScheduleService>,
+    /// VPS Pull Bridge and DB-to-DB migration service.
+    pub bridge_service: Arc<dyn BridgeService>,
     /// Danger Zone destructive operations service.
     pub danger_service: Arc<dyn DangerService>,
     /// Cached external CLI tool discovery.
@@ -50,6 +55,8 @@ impl AppState {
             Arc::new(StoreBackupRepository::new(Arc::clone(&store)));
         let schedule_repo: Arc<dyn ScheduleRepository> =
             Arc::new(StoreScheduleRepository::new(Arc::clone(&store)));
+        let peer_repo: Arc<dyn VpsPeerRepository> =
+            Arc::new(StoreVpsPeerRepository::new(Arc::clone(&store)));
 
         let tool_discovery: Arc<dyn ToolDiscovery> = Arc::new(DefaultToolDiscovery::new());
         let command_runner = Arc::new(TokioCommandRunner::new());
@@ -68,6 +75,13 @@ impl AppState {
             Arc::clone(&schedule_repo),
             Arc::clone(&schedule_reload),
         ));
+        let bridge_service: Arc<dyn BridgeService> = Arc::new(DefaultBridgeService::new(
+            Arc::clone(&store),
+            peer_repo,
+            conn_repo,
+            backup_repo,
+            Arc::clone(&backup_service),
+        ));
         let danger_service: Arc<dyn DangerService> =
             Arc::new(DefaultDangerService::new(Arc::clone(&store)));
         let schedule_runner = Arc::new(ScheduleRunner::new(
@@ -81,6 +95,7 @@ impl AppState {
             connection_service,
             backup_service,
             schedule_service,
+            bridge_service,
             danger_service,
             tool_discovery,
             schedule_runner,

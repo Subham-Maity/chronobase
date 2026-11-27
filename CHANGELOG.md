@@ -5,6 +5,17 @@ All notable changes to ChronoBase will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-27
+
+### Added
+- **Secure VPS Pull Bridge (`chronobase agent-init`, `chronobase --agent`, `chronobase pull`):** Pull dumps directly from remote VPS instances without exposing database ports, secured with mutual HMAC-SHA256 challenge-response, domain-separated SHA-256 subkeys, `ChaCha20-Poly1305` AEAD encryption, anti-replay nonces & 60s clock skew check, per-IP rate limiting, `--allow-ip` filtering, SHA-256 full-stream integrity verification, and guaranteed VPS staging cleanup (immediate + RAII `Drop`).
+- **One-Click DB-to-DB Migration:** Migrate directly between any two configured connections (or route incoming VPS pulls straight into a local target database or `backups/` storage only).
+- **Per-Tab `(i)` Help Modals:** Interactive info button on every tab (`Dashboard`, `Connections`, `Backups`, `VPS & Migrate`, `Schedules`, `Setup`, `Danger Zone`) detailing purpose and step-by-step setup.
+- **Windows Installers:** Automated CI packaging for `ChronoBase-windows-x64-setup.exe` (NSIS) and `ChronoBase-windows-x64.msi` (WiX Toolset v3) alongside `ChronoBase-windows-x64-portable.zip`.
+
+### Fixed
+- **Danger Zone Layout:** Prevented action button text clipping on narrower viewports by adding `min-width: 0px` and `horizontal-stretch: 0` layout constraints.
+
 ## [0.1.0] - 2026-11-27
 
 ### Added

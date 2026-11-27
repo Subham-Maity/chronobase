@@ -7,6 +7,7 @@ import { Icons, Icon } from "../icons.slint";
 import { GhostButton } from "../components/buttons.slint";
 import { Chip } from "../components/form_field.slint";
 import { Surface } from "../components/surface.slint";
+import { PageInfoButton } from "../components/page_guide.slint";
 
 component CopyableCommand inherits Rectangle {
     in property <string> command;
@@ -66,6 +67,7 @@ component ToolStatusBanner inherits Rectangle {
             color: ready ? Palette.ok : Palette.bad;
             wrap: word-wrap;
             horizontal-stretch: 1;
+            min-width: 0px;
             vertical-alignment: center;
         }
     }
@@ -80,6 +82,7 @@ export component SetupPage inherits VerticalLayout {
 
     property <string> selected-os: "windows";
 
+    callback open-guide();
     callback recheck();
 
     padding: Space.s32;
@@ -90,13 +93,24 @@ export component SetupPage inherits VerticalLayout {
         alignment: space-between;
         spacing: Space.s16;
         VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
             spacing: 4px;
-            Text {
-                text: "Setup";
-                font-family: Palette.font-ui;
-                font-size: Type.title;
-                font-weight: 600;
-                color: Palette.ink-1;
+            HorizontalLayout {
+                spacing: Space.s8;
+                Text {
+                    text: "Setup";
+                    font-family: Palette.font-ui;
+                    font-size: Type.title;
+                    font-weight: 600;
+                    color: Palette.ink-1;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    PageInfoButton {
+                        clicked => { root.open-guide(); }
+                    }
+                }
             }
             Text {
                 text: "Install and verify PostgreSQL and MongoDB CLI tools";

@@ -74,12 +74,32 @@ jobs:
       - name: Build release binary
         run: cargo build --release --locked -p chronobase --target ${{ matrix.target }}
 
+      - name: Setup NSIS for Windows installer
+        if: matrix.name == 'windows-x64'
+        uses: nsis-dev/setup-nsis@v1
+
+      - name: Ensure WiX Toolset v3 on PATH
+        if: matrix.name == 'windows-x64'
+        shell: pwsh
+        run: |
+          $wixBin = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*" -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty DirectoryName
+          if (-not $wixBin) {
+            choco install wixtoolset -y --no-progress
+            $wixBin = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*" -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty DirectoryName
+          }
+          if (-not $wixBin) {
+            throw "WiX Toolset v3 (candle.exe) could not be found or installed"
+          }
+          $wixBin | Out-File -FilePath $env:GITHUB_PATH -Append
+
       - name: Package Windows
         if: matrix.name == 'windows-x64'
         shell: pwsh
         run: |
-          .\scripts\package-windows.ps1 -Target ${{ matrix.target }} -OutDir dist
+          .\scripts\package-windows.ps1 -Target ${{ matrix.target }} -OutDir dist -RequireInstallers
           if (!(Test-Path dist\ChronoBase-windows-x64-portable.zip)) { exit 1 }
+          if (!(Test-Path dist\ChronoBase-windows-x64-setup.exe)) { exit 1 }
+          if (!(Test-Path dist\ChronoBase-windows-x64.msi)) { exit 1 }
 
       - name: Package Linux
         if: matrix.name == 'linux-x86_64'
@@ -112,6 +132,8 @@ jobs:
           name: artifacts-${{ matrix.name }}
           path: |
             dist/*.zip
+            dist/*.exe
+            dist/*.msi
             dist/*.tar.gz
             dist/*.deb
             dist/*.dmg
@@ -155,7 +177,7 @@ jobs:
           cat <<EOF > release-notes.md
           # ChronoBase ${TAG}
 
-          ChronoBase is the native Rust rewrite of the [v1 Node.js version](https://github.com/${REPO}/tree/d695de0) — a local-first backup manager for PostgreSQL and MongoDB. Zero cloud, tiny footprint, fast startup, and full compatibility with v1 \`chronobase-data.json\` files.
+          ChronoBase is the native Rust rewrite of the [ChronoBase v1 (Node.js)](https://github.com/${REPO}/tree/d695de05d8e5966a39b9e0b37e612e182ab9eb48) — a local-first backup manager for PostgreSQL and MongoDB. Zero cloud, tiny footprint, fast startup, and full compatibility with v1 \`chronobase-data.json\` files.
 
           ## What's New in ${TAG}
 
@@ -163,9 +185,9 @@ jobs:
 
           ## Downloads & Platform Support
 
-          | Platform | Package / Archive | Notes |
+          | Platform | Package / Installer | Notes |
           |---|---|---|
-          | Windows x64 | \`ChronoBase-windows-x64-portable.zip\` | Portable executable + docs |
+          | Windows x64 | \`ChronoBase-windows-x64-setup.exe\`, \`ChronoBase-windows-x64.msi\`, \`ChronoBase-windows-x64-portable.zip\` | NSIS setup installer, Enterprise MSI, and portable zip |
           | Linux x86_64 | \`ChronoBase-linux-x86_64.tar.gz\`, \`ChronoBase-linux-x86_64.deb\` | X11 & Wayland via Slint winit |
           | macOS Apple Silicon | \`ChronoBase-macos-arm64.dmg\`, \`ChronoBase-macos-arm64.app.tar.gz\` | Native \`aarch64-apple-darwin\` |
           | macOS Intel | \`ChronoBase-macos-x64.dmg\`, \`ChronoBase-macos-x64.app.tar.gz\` | Cross-compiled (build-only, not tested on Intel hardware) |
@@ -179,6 +201,8 @@ jobs:
 
           **Windows (PowerShell):**
           \`\`\`powershell
+          Get-FileHash .\ChronoBase-windows-x64-setup.exe -Algorithm SHA256
+          Get-FileHash .\ChronoBase-windows-x64.msi -Algorithm SHA256
           Get-FileHash .\ChronoBase-windows-x64-portable.zip -Algorithm SHA256
           \`\`\`
 

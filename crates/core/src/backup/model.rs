@@ -73,4 +73,6 @@ pub enum RestoreTarget {
     SameDatabase,
     /// Push the snapshot to a user-supplied target database URL.
     DifferentDatabase(Secret),
+    /// Migrate/overwrite a destination database (uses `--drop` on MongoDB and `--single-transaction` on Postgres).
+    MigrateDatabase(Secret),
 }

@@ -7,6 +7,7 @@ import { Icons, Icon } from "../icons.slint";
 import { PrimaryButton, GhostButton } from "../components/buttons.slint";
 import { Surface } from "../components/surface.slint";
 import { Badge } from "../components/badge.slint";
+import { PageInfoButton } from "../components/page_guide.slint";
 
 export struct RecentBackupRow {
     id: int,
@@ -28,6 +29,7 @@ export component DashboardPage inherits VerticalLayout {
     in property <bool> backup-all-busy: false;
     in property <[RecentBackupRow]> recent-rows: [];
 
+    callback open-guide();
     callback backup-all();
     callback navigate(string);
 
@@ -51,15 +53,25 @@ export component DashboardPage inherits VerticalLayout {
 
             VerticalLayout {
                 horizontal-stretch: 1;
+                min-width: 0px;
                 spacing: 4px;
 
-                Text {
-                    text: status-sentence;
-                    font-family: Palette.font-ui;
-                    font-size: Type.title;
-                    font-weight: 600;
-                    color: last-failed ? Palette.bad : Palette.ink-1;
-                    overflow: elide;
+                HorizontalLayout {
+                    spacing: Space.s8;
+                    Text {
+                        text: status-sentence;
+                        font-family: Palette.font-ui;
+                        font-size: Type.title;
+                        font-weight: 600;
+                        color: last-failed ? Palette.bad : Palette.ink-1;
+                        overflow: elide;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        PageInfoButton {
+                            clicked => { root.open-guide(); }
+                        }
+                    }
                 }
 
                 Text {

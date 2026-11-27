@@ -1,5 +1,5 @@
 //! Dedicated background thread running a `tokio` current-thread runtime
-//! for all I/O, subprocess execution, and the cron scheduler.
+//! for all I/O, subprocess execution, VPS pulls, and the cron scheduler.
 
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -7,6 +7,7 @@ use std::thread::JoinHandle;
 use tokio::sync::{mpsc, watch};
 
 use chronobase_core::backup::RestoreTarget;
+use chronobase_core::bridge::{CreateVpsPeerInput, UpdateVpsPeerInput};
 use chronobase_core::connection::{CreateConnectionInput, DbKind, UpdateConnectionInput};
 use chronobase_core::schedule::CreateScheduleInput;
 use chronobase_core::store::JsonStore;
@@ -48,6 +49,19 @@ pub enum AppCommand {
     ToggleSchedule { id: u64 },
     /// Delete a schedule.
     DeleteSchedule { id: u64 },
+    /// Create a new VPS pull peer.
+    CreateVpsPeer { input: CreateVpsPeerInput },
+    /// Update an existing VPS pull peer.
+    UpdateVpsPeer { id: u64, input: UpdateVpsPeerInput },
+    /// Delete a VPS pull peer.
+    DeleteVpsPeer { id: u64 },
+    /// Pull backup from a VPS peer (and optionally migrate into local DB).
+    PullFromVps { peer_id: u64 },
+    /// Direct one-click DB-to-DB migration.
+    MigrateDbToDb {
+        source_conn_id: u64,
+        dest_conn_id: u64,
+    },
     /// Danger Zone: delete all backup files (`DELETE BACKUPS`).
     DeleteAllBackups { confirm: String },
     /// Danger Zone: reset everything (`DELETE EVERYTHING`).

@@ -6,14 +6,14 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/Subham-Maity/chronobase"
 
 [workspace.dependencies]
-# Async runtime (current-thread runtime, subprocesses, timers, signals, fs)
-tokio = { version = "1.54", default-features = false, features = ["rt", "process", "time", "sync", "fs", "signal", "macros", "io-util"] }
+# Async runtime (current-thread runtime, subprocesses, timers, signals, fs, net)
+tokio = { version = "1.54", default-features = false, features = ["rt", "process", "time", "sync", "fs", "signal", "macros", "io-util", "net"] }
 # Serialization for v1-compatible JSON store
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -39,6 +39,12 @@ slint = { version = "1.19.1", default-features = false, features = ["compat-1-18
 slint-build = "1.19.1"
 # Dev-only mocking for CommandRunner and repositories
 mockall = "0.15"
+# Pure-Rust cryptography for VPS bridge (HMAC-SHA256, ChaCha20-Poly1305, constant-time compare, CSPRNG)
+sha2 = "0.11"
+hmac = "0.13"
+chacha20poly1305 = "0.11"
+subtle = "2.6"
+getrandom = "0.4"
 
 [profile.release]
 lto = "fat"

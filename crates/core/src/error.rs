@@ -3,6 +3,7 @@
 use thiserror::Error;
 
 use crate::backup::BackupError;
+use crate::bridge::BridgeError;
 use crate::connection::ConnectionError;
 use crate::schedule::ScheduleError;
 use crate::store::StoreError;
@@ -22,6 +23,10 @@ pub enum CoreError {
     /// Backup, restore, or wipe engine error.
     #[error(transparent)]
     Backup(#[from] BackupError),
+
+    /// VPS Pull Bridge or DB-to-DB migration error.
+    #[error(transparent)]
+    Bridge(#[from] BridgeError),
 
     /// Schedule management or cron parsing error.
     #[error(transparent)]

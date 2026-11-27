@@ -7,6 +7,7 @@ import { GhostButton, DangerButton } from "../components/buttons.slint";
 import { Badge } from "../components/badge.slint";
 import { CycleButton } from "../components/form_field.slint";
 import { Surface } from "../components/surface.slint";
+import { PageInfoButton } from "../components/page_guide.slint";
 
 export struct BackupRow {
     id: int,
@@ -31,6 +32,7 @@ export component BackupsPage inherits VerticalLayout {
     in-out property <string> selected-error-msg: "";
     in-out property <string> selected-error-name: "";
 
+    callback open-guide();
     callback cycle-group-filter();
     callback cycle-type-filter();
     callback cycle-status-filter();
@@ -45,12 +47,21 @@ export component BackupsPage inherits VerticalLayout {
     // Header
     VerticalLayout {
         spacing: 4px;
-        Text {
-            text: "Backups";
-            font-family: Palette.font-ui;
-            font-size: Type.title;
-            font-weight: 600;
-            color: Palette.ink-1;
+        HorizontalLayout {
+            spacing: Space.s8;
+            Text {
+                text: "Backups";
+                font-family: Palette.font-ui;
+                font-size: Type.title;
+                font-weight: 600;
+                color: Palette.ink-1;
+            }
+            VerticalLayout {
+                alignment: center;
+                PageInfoButton {
+                    clicked => { root.open-guide(); }
+                }
+            }
         }
         Text {
             text: "Snapshot timeline — newest 500 entries retained";

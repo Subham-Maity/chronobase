@@ -4,8 +4,10 @@ import { Palette, Type, Space } from "../theme.slint";
 import { Icons, Icon } from "../icons.slint";
 import { DangerButton } from "../components/buttons.slint";
 import { Surface } from "../components/surface.slint";
+import { PageInfoButton } from "../components/page_guide.slint";
 
 export component DangerPage inherits VerticalLayout {
+    callback open-guide();
     callback open-delete-backups();
     callback open-delete-all();
 
@@ -13,20 +15,35 @@ export component DangerPage inherits VerticalLayout {
     spacing: Space.s24;
     alignment: start;
 
-    VerticalLayout {
-        spacing: 4px;
-        Text {
-            text: "Danger Zone";
-            font-family: Palette.font-ui;
-            font-size: Type.title;
-            font-weight: 600;
-            color: Palette.ink-1;
-        }
-        Text {
-            text: "Irreversible actions — read carefully before proceeding";
-            font-family: Palette.font-ui;
-            font-size: Type.secondary;
-            color: Palette.ink-3;
+    HorizontalLayout {
+        alignment: space-between;
+        spacing: Space.s16;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: Space.s8;
+                Text {
+                    text: "Danger Zone";
+                    font-family: Palette.font-ui;
+                    font-size: Type.title;
+                    font-weight: 600;
+                    color: Palette.ink-1;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    PageInfoButton {
+                        clicked => { root.open-guide(); }
+                    }
+                }
+            }
+            Text {
+                text: "Irreversible actions — read carefully before proceeding";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+            }
         }
     }
 
@@ -63,9 +80,12 @@ export component DangerPage inherits VerticalLayout {
                 border-color: Palette.row-divider;
                 HorizontalLayout {
                     padding: Space.s24;
-                    spacing: Space.s24;
+                    spacing: Space.s16;
+
+                    // min-width: 0px prevents word-wrap Text from pushing the right button past Surface edge
                     VerticalLayout {
                         horizontal-stretch: 1;
+                        min-width: 0px;
                         spacing: 4px;
                         Text {
                             text: "Delete all backup files";
@@ -82,7 +102,9 @@ export component DangerPage inherits VerticalLayout {
                             wrap: word-wrap;
                         }
                     }
+
                     VerticalLayout {
+                        horizontal-stretch: 0;
                         alignment: center;
                         DangerButton {
                             text: "Delete all backups";
@@ -97,9 +119,11 @@ export component DangerPage inherits VerticalLayout {
             // Action 2: Reset everything
             HorizontalLayout {
                 padding: Space.s24;
-                spacing: Space.s24;
+                spacing: Space.s16;
+
                 VerticalLayout {
                     horizontal-stretch: 1;
+                    min-width: 0px;
                     spacing: 4px;
                     Text {
                         text: "Reset everything";
@@ -109,14 +133,16 @@ export component DangerPage inherits VerticalLayout {
                         color: Palette.ink-1;
                     }
                     Text {
-                        text: "Deletes all connections, schedules, backup history, and every backup file on disk. ChronoBase returns to a blank state with no undo.";
+                        text: "Deletes all connections, schedules, VPS peers, backup history, and every backup file on disk. ChronoBase returns to a blank state with no undo.";
                         font-family: Palette.font-ui;
                         font-size: Type.secondary;
                         color: Palette.ink-3;
                         wrap: word-wrap;
                     }
                 }
+
                 VerticalLayout {
+                    horizontal-stretch: 0;
                     alignment: center;
                     DangerButton {
                         text: "Reset everything";

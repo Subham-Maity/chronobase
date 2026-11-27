@@ -16,6 +16,11 @@ cron.workspace = true
 url.workspace = true
 directories.workspace = true
 fs4.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+chacha20poly1305.workspace = true
+subtle.workspace = true
+getrandom.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true

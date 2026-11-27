@@ -1,0 +1,293 @@
+// VPS & Migrate page — Secure encrypted VPS Pull Bridge + one-click DB-to-DB Migrate
+
+import { ListView } from "std-widgets.slint";
+import { Palette, Type, Space } from "../theme.slint";
+import { Icons, Icon } from "../icons.slint";
+import { PrimaryButton, GhostButton, DangerButton } from "../components/buttons.slint";
+import { Badge } from "../components/badge.slint";
+import { Surface } from "../components/surface.slint";
+import { PageInfoButton } from "../components/page_guide.slint";
+
+export struct VpsPeerRow {
+    id: int,
+    name: string,
+    endpoint: string,
+    db-type: string,
+    fingerprint: string,
+    target-label: string,
+    last-pull: string,
+}
+
+export component BridgePage inherits VerticalLayout {
+    in property <[VpsPeerRow]> rows: [];
+    in property <bool> pull-busy: false;
+    in property <bool> migrate-busy: false;
+
+    callback open-guide();
+    callback add-vps();
+    callback open-migrate();
+    callback pull-one(int);
+    callback edit-one(int);
+    callback delete-one(int);
+
+    property <bool> compact: root.width < 820px;
+
+    padding: Space.s32;
+    spacing: Space.s24;
+
+    // Header
+    HorizontalLayout {
+        alignment: space-between;
+        spacing: Space.s16;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: Space.s8;
+                Text {
+                    text: "VPS & Migrate";
+                    font-family: Palette.font-ui;
+                    font-size: Type.title;
+                    font-weight: 600;
+                    color: Palette.ink-1;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    PageInfoButton {
+                        clicked => { root.open-guide(); }
+                    }
+                }
+            }
+            Text {
+                text: "Pull encrypted snapshots from remote VPS agents or migrate DB to DB in one click";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+                wrap: word-wrap;
+            }
+        }
+
+        HorizontalLayout {
+            horizontal-stretch: 0;
+            spacing: Space.s8;
+            VerticalLayout {
+                alignment: center;
+                GhostButton {
+                    text: migrate-busy ? "Migrating..." : "Migrate DB -> DB";
+                    icon-path: Icons.transfer;
+                    enabled: !migrate-busy;
+                    clicked => { root.open-migrate(); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                PrimaryButton {
+                    text: "Add VPS peer";
+                    icon-path: Icons.plus;
+                    clicked => { root.add-vps(); }
+                }
+            }
+        }
+    }
+
+    // Honest busy bar when pulling or migrating
+    if pull-busy || migrate-busy: Rectangle {
+        height: 3px;
+        border-radius: 2px;
+        background: Palette.tier-raised;
+        clip: true;
+
+        Rectangle {
+            width: parent.width * 0.28;
+            height: 3px;
+            border-radius: 2px;
+            background: Palette.signal;
+            x: -self.width + (parent.width + self.width) * mod(animation-tick() / 1.2s, 1.0);
+        }
+    }
+
+    Surface {
+        vertical-stretch: 1;
+
+        if rows.length == 0: VerticalLayout {
+            alignment: center;
+            spacing: Space.s12;
+            HorizontalLayout {
+                alignment: center;
+                Icon { svg-path: Icons.download; tint: Palette.ink-3; size: 28px; }
+            }
+            Text {
+                text: "No VPS peers configured yet";
+                font-family: Palette.font-ui;
+                font-size: Type.body;
+                font-weight: 500;
+                color: Palette.ink-1;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Run `chronobase agent-init` + `chronobase --agent` on your VPS, add the peer here, and pull anytime with mutual HMAC-SHA256 + ChaCha20 encryption.";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                alignment: center;
+                spacing: Space.s12;
+                PrimaryButton {
+                    text: "Add VPS peer";
+                    icon-path: Icons.plus;
+                    clicked => { root.add-vps(); }
+                }
+                GhostButton {
+                    text: "Migrate DB -> DB";
+                    icon-path: Icons.transfer;
+                    clicked => { root.open-migrate(); }
+                }
+            }
+        }
+
+        if rows.length > 0: VerticalLayout {
+            Rectangle {
+                height: 38px;
+                background: Palette.tier-base;
+                border-width: 1px;
+                border-color: Palette.line;
+                HorizontalLayout {
+                    padding-left: Space.s16;
+                    padding-right: Space.s16;
+                    spacing: Space.s12;
+                    Text { text: "VPS Peer"; horizontal-stretch: 2; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    if !compact: Text { text: "Endpoint"; horizontal-stretch: 2; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    Text { text: "Engine"; width: 108px; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    Text { text: "Target"; horizontal-stretch: 2; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    if !compact: Text { text: "Key SHA-256"; width: 140px; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    Text { text: "Actions"; width: 190px; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                }
+            }
+
+            ListView {
+                vertical-stretch: 1;
+                for row in rows: Rectangle {
+                    height: 56px;
+                    border-width: 1px;
+                    border-color: Palette.row-divider;
+
+                    HorizontalLayout {
+                        padding-left: Space.s16;
+                        padding-right: Space.s16;
+                        spacing: Space.s12;
+
+                        VerticalLayout {
+                            horizontal-stretch: 2;
+                            min-width: 0px;
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: row.name;
+                                font-family: Palette.font-ui;
+                                font-size: Type.body;
+                                font-weight: 500;
+                                color: Palette.ink-1;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: "Last pull: " + row.last-pull;
+                                font-family: Palette.font-ui;
+                                font-size: Type.min-label;
+                                color: Palette.ink-3;
+                                overflow: elide;
+                            }
+                        }
+
+                        if !compact: Text {
+                            text: row.endpoint;
+                            horizontal-stretch: 2;
+                            min-width: 0px;
+                            font-family: Palette.font-mono;
+                            font-size: Type.min-label;
+                            color: Palette.ink-2;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        HorizontalLayout {
+                            width: 108px;
+                            alignment: start;
+                            VerticalLayout {
+                                alignment: center;
+                                Badge {
+                                    text: row.db-type == "postgres" ? "Postgres" : "MongoDB";
+                                    variant: row.db-type == "postgres" ? "pg" : "mongo";
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            horizontal-stretch: 2;
+                            min-width: 0px;
+                            alignment: start;
+                            VerticalLayout {
+                                alignment: center;
+                                Badge {
+                                    text: row.target-label;
+                                    variant: "group";
+                                }
+                            }
+                        }
+
+                        if !compact: Text {
+                            text: row.fingerprint;
+                            width: 140px;
+                            font-family: Palette.font-mono;
+                            font-size: Type.min-label;
+                            color: Palette.signal;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        HorizontalLayout {
+                            width: 190px;
+                            horizontal-stretch: 0;
+                            spacing: 6px;
+                            alignment: end;
+
+                            VerticalLayout {
+                                alignment: center;
+                                PrimaryButton {
+                                    text: "Pull";
+                                    icon-path: Icons.download;
+                                    small: true;
+                                    enabled: !pull-busy;
+                                    a11y-label: "Pull from " + row.name;
+                                    clicked => { root.pull-one(row.id); }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                GhostButton {
+                                    icon-path: Icons.edit;
+                                    small: true;
+                                    a11y-label: "Edit " + row.name;
+                                    clicked => { root.edit-one(row.id); }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                DangerButton {
+                                    icon-path: Icons.trash;
+                                    small: true;
+                                    a11y-label: "Delete " + row.name;
+                                    clicked => { root.delete-one(row.id); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

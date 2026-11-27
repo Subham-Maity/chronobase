@@ -4,6 +4,7 @@
 //! desktop application, the headless scheduler daemon, and the CLI.
 
 pub mod backup;
+pub mod bridge;
 pub mod connection;
 pub mod constant;
 pub mod error;

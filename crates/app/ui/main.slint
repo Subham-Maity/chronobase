@@ -10,10 +10,12 @@ import { DashboardPage, RecentBackupRow } from "./pages/dashboard.slint";
 import { ConnectionsPage, ConnectionRow } from "./pages/connections.slint";
 import { BackupsPage, BackupRow } from "./pages/backups.slint";
 import { SchedulesPage, ScheduleRow } from "./pages/schedules.slint";
+import { BridgePage, VpsPeerRow } from "./pages/bridge.slint";
 import { SetupPage } from "./pages/setup.slint";
 import { DangerPage } from "./pages/danger.slint";
+import { PageGuideModal } from "./components/page_guide.slint";
 
-export { RecentBackupRow, ConnectionRow, BackupRow, ScheduleRow, ToastMessage }
+export { RecentBackupRow, ConnectionRow, BackupRow, ScheduleRow, VpsPeerRow, ToastMessage }
 
 export component MainWindow inherits Window {
     title: "ChronoBase";
@@ -59,11 +61,44 @@ export component MainWindow inherits Window {
     // Schedules
     in property <[ScheduleRow]> schedule-rows: [];
 
+    // VPS & Migrate
+    in property <[VpsPeerRow]> vps-rows: [];
+    in-out property <bool> pull-busy: false;
+    in-out property <bool> migrate-busy: false;
+
     // Setup
     in property <bool> recheck-busy: false;
 
     // Toasts
     in property <[ToastMessage]> toasts: [];
+
+    // Per-tab Page Guide modal
+    in-out property <bool> guide-open: false;
+    in-out property <string> guide-title: "";
+    in-out property <string> guide-purpose: "";
+    in-out property <string> guide-step-1: "";
+    in-out property <string> guide-step-2: "";
+    in-out property <string> guide-step-3: "";
+    in-out property <string> guide-step-4: "";
+
+    // VPS Peer Modal state
+    in-out property <bool> vps-modal-open: false;
+    in-out property <int> vps-edit-id: -1;
+    in-out property <string> vps-form-name: "";
+    in-out property <string> vps-form-endpoint: "";
+    in-out property <string> vps-form-type: "postgres";
+    in-out property <string> vps-form-remote-url: "";
+    in-out property <string> vps-form-key: "";
+    in-out property <string> vps-form-fingerprint: "";
+    in-out property <int> vps-form-target-id: 0;
+    in-out property <string> vps-form-target-label: "Local backups/ storage ONLY";
+
+    // DB-to-DB Migrate Modal state
+    in-out property <bool> migrate-modal-open: false;
+    in-out property <int> migrate-src-id: 0;
+    in-out property <string> migrate-src-label: "";
+    in-out property <int> migrate-dst-id: 0;
+    in-out property <string> migrate-dst-label: "";
 
     // Connection Modal state
     in-out property <bool> conn-modal-open: false;
@@ -133,6 +168,20 @@ export component MainWindow inherits Window {
     callback request-delete-schedule(int);
 
     callback recheck-tools();
+
+    callback open-page-guide(string);
+    callback open-add-vps();
+    callback open-edit-vps(int);
+    callback generate-vps-key();
+    callback preview-vps-fingerprint(string);
+    callback cycle-vps-target();
+    callback save-vps-peer(int, string, string, string, string, string, int);
+    callback pull-vps-peer(int);
+    callback request-delete-vps-peer(int);
+    callback open-migrate-modal();
+    callback cycle-migrate-src();
+    callback cycle-migrate-dst();
+    callback submit-migrate();
 
     callback submit-delete-all-backups(string);
     callback submit-reset-everything(string);
@@ -235,6 +284,12 @@ export component MainWindow inherits Window {
                         active: active-page == "backups";
                         clicked => { active-page = "backups"; root.navigate("backups"); }
                     }
+                    NavItem {
+                        label: "VPS & Migrate";
+                        icon-path: Icons.download;
+                        active: active-page == "bridge";
+                        clicked => { active-page = "bridge"; root.navigate("bridge"); }
+                    }
 
                     Text {
                         text: "Config";
@@ -309,6 +364,7 @@ export component MainWindow inherits Window {
                 stat-scheds: root.stat-scheds;
                 backup-all-busy: root.backup-all-busy;
                 recent-rows: root.recent-rows;
+                open-guide => { root.open-page-guide("dashboard"); }
                 backup-all => { root.backup-all(); }
                 navigate(p) => { active-page = p; root.navigate(p); }
             }
@@ -318,6 +374,7 @@ export component MainWindow inherits Window {
                 group-filter-label: root.conn-group-filter-label;
                 type-filter-label: root.conn-type-filter-label;
                 backup-group-busy: root.backup-group-busy;
+                open-guide => { root.open-page-guide("connections"); }
                 add-connection => { root.open-add-connection(); }
                 cycle-group-filter => { root.cycle-conn-group-filter(); }
                 cycle-type-filter => { root.cycle-conn-type-filter(); }
@@ -333,6 +390,7 @@ export component MainWindow inherits Window {
                 group-filter-label: root.bk-group-filter-label;
                 type-filter-label: root.bk-type-filter-label;
                 status-filter-label: root.bk-status-filter-label;
+                open-guide => { root.open-page-guide("backups"); }
                 cycle-group-filter => { root.cycle-bk-group-filter(); }
                 cycle-type-filter => { root.cycle-bk-type-filter(); }
                 cycle-status-filter => { root.cycle-bk-status-filter(); }
@@ -340,8 +398,21 @@ export component MainWindow inherits Window {
                 delete-backup(id) => { root.request-delete-backup(id); }
             }
 
+            if active-page == "bridge": BridgePage {
+                rows: root.vps-rows;
+                pull-busy: root.pull-busy;
+                migrate-busy: root.migrate-busy;
+                open-guide => { root.open-page-guide("bridge"); }
+                add-vps => { root.open-add-vps(); }
+                open-migrate => { root.open-migrate-modal(); }
+                pull-one(id) => { root.pull-vps-peer(id); }
+                edit-one(id) => { root.open-edit-vps(id); }
+                delete-one(id) => { root.request-delete-vps-peer(id); }
+            }
+
             if active-page == "schedules": SchedulesPage {
                 rows: root.schedule-rows;
+                open-guide => { root.open-page-guide("schedules"); }
                 add-schedule => { root.open-add-schedule(); }
                 toggle-schedule(id) => { root.toggle-schedule(id); }
                 delete-schedule(id) => { root.request-delete-schedule(id); }
@@ -353,10 +424,12 @@ export component MainWindow inherits Window {
                 mongo-ready: root.mongo-ready;
                 mongo-status-text: root.mongo-path-text;
                 recheck-busy: root.recheck-busy;
+                open-guide => { root.open-page-guide("setup"); }
                 recheck => { root.recheck-tools(); }
             }
 
             if active-page == "danger": DangerPage {
+                open-guide => { root.open-page-guide("danger"); }
                 open-delete-backups => {
                     delete-backups-input = "";
                     delete-backups-modal-open = true;
@@ -834,6 +907,294 @@ export component MainWindow inherits Window {
                 }
             }
         }
+    }
+
+    // ── VPS Peer Modal ──
+    ModalOverlay {
+        open: vps-modal-open;
+        modal-width: 540px;
+        backdrop-clicked => { vps-modal-open = false; }
+
+        VerticalLayout {
+            spacing: 10px;
+
+            Text {
+                text: vps-edit-id < 0 ? "Add VPS peer" : "Edit VPS peer";
+                font-family: Palette.font-ui;
+                font-size: Type.section;
+                font-weight: 700;
+                color: Palette.ink-1;
+            }
+
+            HorizontalLayout {
+                spacing: Space.s12;
+                FormField {
+                    horizontal-stretch: 1;
+                    label: "VPS name";
+                    value <=> vps-form-name;
+                    placeholder: "Prod Hetzner VPS";
+                }
+                FormField {
+                    horizontal-stretch: 1;
+                    label: "Agent endpoint (host:port)";
+                    value <=> vps-form-endpoint;
+                    mono: true;
+                    placeholder: "203.0.113.10:9443";
+                }
+            }
+
+            VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Remote database engine";
+                    font-family: Palette.font-ui;
+                    font-size: Type.secondary;
+                    font-weight: 500;
+                    color: Palette.ink-2;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    Chip {
+                        text: "PostgreSQL";
+                        selected: vps-form-type == "postgres";
+                        clicked => { vps-form-type = "postgres"; }
+                    }
+                    Chip {
+                        text: "MongoDB";
+                        selected: vps-form-type == "mongodb";
+                        clicked => { vps-form-type = "mongodb"; }
+                    }
+                }
+            }
+
+            FormField {
+                label: "Remote DB URL (resolved inside VPS)";
+                value <=> vps-form-remote-url;
+                mono: true;
+                placeholder: vps-form-type == "postgres"
+                    ? "postgresql://postgres:secret@127.0.0.1:5432/app"
+                    : "mongodb://127.0.0.1:27017/app";
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                FormField {
+                    horizontal-stretch: 1;
+                    label: "Shared pairing key (min 16 chars)";
+                    value <=> vps-form-key;
+                    mono: true;
+                    placeholder: "64-hex key from `chronobase agent-init`";
+                    edited(txt) => { root.preview-vps-fingerprint(txt); }
+                }
+                VerticalLayout {
+                    alignment: end;
+                    GhostButton {
+                        text: "Generate";
+                        small: true;
+                        clicked => { root.generate-vps-key(); }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 30px;
+                border-radius: Palette.r-sm;
+                background: Palette.tier-base;
+                border-width: 1px;
+                border-color: Palette.line;
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    alignment: space-between;
+                    Text {
+                        text: "SHA-256 fingerprint";
+                        font-family: Palette.font-ui;
+                        font-size: Type.min-label;
+                        color: Palette.ink-3;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: vps-form-fingerprint;
+                        font-family: Palette.font-mono;
+                        font-size: Type.min-label;
+                        color: Palette.signal;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Pull destination";
+                    font-family: Palette.font-ui;
+                    font-size: Type.secondary;
+                    font-weight: 500;
+                    color: Palette.ink-2;
+                }
+                CycleButton {
+                    label: vps-form-target-label;
+                    clicked => { root.cycle-vps-target(); }
+                }
+            }
+
+            Rectangle {
+                border-radius: Palette.r-sm;
+                background: Palette.signal-dim;
+                border-width: 1px;
+                border-color: Palette.line-strong;
+                VerticalLayout {
+                    padding: 8px;
+                    Text {
+                        text: "VPS setup: `chronobase agent-init` then `chronobase --agent --bind 0.0.0.0:9443`. Staging dumps delete automatically after transfer.";
+                        font-family: Palette.font-mono;
+                        font-size: Type.min-label;
+                        color: Palette.ink-2;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            Rectangle { height: 1px; background: Palette.line; }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10px;
+                GhostButton { text: "Cancel"; clicked => { vps-modal-open = false; } }
+                PrimaryButton {
+                    text: vps-edit-id < 0 ? "Save VPS peer" : "Save changes";
+                    clicked => {
+                        root.save-vps-peer(
+                            vps-edit-id,
+                            vps-form-name,
+                            vps-form-endpoint,
+                            vps-form-type,
+                            vps-form-remote-url,
+                            vps-form-key,
+                            vps-form-target-id
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // ── DB-to-DB Migrate Modal ──
+    ModalOverlay {
+        open: migrate-modal-open;
+        modal-width: 480px;
+        backdrop-clicked => { if !migrate-busy { migrate-modal-open = false; } }
+
+        VerticalLayout {
+            spacing: 14px;
+
+            Text {
+                text: "One-click DB migration";
+                font-family: Palette.font-ui;
+                font-size: Type.section;
+                font-weight: 700;
+                color: Palette.ink-1;
+            }
+            Text {
+                text: "Dump a source database and restore it straight into a destination database.";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-3;
+                wrap: word-wrap;
+            }
+
+            VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Source database (read from)";
+                    font-family: Palette.font-ui;
+                    font-size: Type.secondary;
+                    font-weight: 500;
+                    color: Palette.ink-2;
+                }
+                CycleButton {
+                    label: migrate-src-label;
+                    clicked => { root.cycle-migrate-src(); }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Destination database (overwritten on restore)";
+                    font-family: Palette.font-ui;
+                    font-size: Type.secondary;
+                    font-weight: 500;
+                    color: Palette.ink-2;
+                }
+                CycleButton {
+                    label: migrate-dst-label;
+                    clicked => { root.cycle-migrate-dst(); }
+                }
+            }
+
+            Rectangle {
+                border-radius: Palette.r-md;
+                background: Palette.warn-dim;
+                border-width: 1px;
+                border-color: Palette.warn-border;
+                VerticalLayout {
+                    padding: 12px;
+                    Text {
+                        text: "Both connections must share the same engine (PostgreSQL -> PostgreSQL or MongoDB -> MongoDB). Destination data is replaced.";
+                        font-family: Palette.font-ui;
+                        font-size: Type.min-label;
+                        color: Palette.ink-2;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            if migrate-busy: Rectangle {
+                height: 3px;
+                border-radius: 2px;
+                background: Palette.tier-raised;
+                clip: true;
+
+                Rectangle {
+                    width: parent.width * 0.28;
+                    height: 3px;
+                    border-radius: 2px;
+                    background: Palette.signal;
+                    x: -self.width + (parent.width + self.width) * mod(animation-tick() / 1.2s, 1.0);
+                }
+            }
+
+            Rectangle { height: 1px; background: Palette.line; }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10px;
+                GhostButton {
+                    text: "Cancel";
+                    enabled: !migrate-busy;
+                    clicked => { migrate-modal-open = false; }
+                }
+                PrimaryButton {
+                    text: migrate-busy ? "Migrating..." : "Migrate now";
+                    enabled: !migrate-busy && migrate-src-id > 0 && migrate-dst-id > 0 && migrate-src-id != migrate-dst-id;
+                    clicked => { root.submit-migrate(); }
+                }
+            }
+        }
+    }
+
+    // ── Per-Tab Guide (i) Modal ──
+    PageGuideModal {
+        open: guide-open;
+        guide-title: guide-title;
+        guide-purpose: guide-purpose;
+        step-1: guide-step-1;
+        step-2: guide-step-2;
+        step-3: guide-step-3;
+        step-4: guide-step-4;
+        close => { guide-open = false; }
     }
 
     // ── Generic Confirm Dialog ──

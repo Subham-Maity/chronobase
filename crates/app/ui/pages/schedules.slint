@@ -6,6 +6,7 @@ import { Icons, Icon } from "../icons.slint";
 import { PrimaryButton, DangerButton } from "../components/buttons.slint";
 import { Badge } from "../components/badge.slint";
 import { Surface } from "../components/surface.slint";
+import { PageInfoButton } from "../components/page_guide.slint";
 
 export struct ScheduleRow {
     id: int,
@@ -73,6 +74,7 @@ component ScheduleSwitch inherits Rectangle {
 export component SchedulesPage inherits VerticalLayout {
     in property <[ScheduleRow]> rows: [];
 
+    callback open-guide();
     callback add-schedule();
     callback toggle-schedule(int);
     callback delete-schedule(int);
@@ -85,13 +87,24 @@ export component SchedulesPage inherits VerticalLayout {
         alignment: space-between;
         spacing: Space.s16;
         VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
             spacing: 4px;
-            Text {
-                text: "Schedules";
-                font-family: Palette.font-ui;
-                font-size: Type.title;
-                font-weight: 600;
-                color: Palette.ink-1;
+            HorizontalLayout {
+                spacing: Space.s8;
+                Text {
+                    text: "Schedules";
+                    font-family: Palette.font-ui;
+                    font-size: Type.title;
+                    font-weight: 600;
+                    color: Palette.ink-1;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    PageInfoButton {
+                        clicked => { root.open-guide(); }
+                    }
+                }
             }
             Text {
                 text: "Automated local-time cron backups";

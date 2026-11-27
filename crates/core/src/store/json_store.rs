@@ -15,6 +15,7 @@ use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 
 use crate::backup::{BackupEntry, BackupStatus};
+use crate::bridge::VpsPeer;
 use crate::connection::Connection;
 use crate::constant::{
     BACKUPS_DIR_NAME, CURRENT_SCHEMA_VERSION, DATA_FILE_NAME, LOCK_FILE_NAME, STORE_FLUSH_DEBOUNCE,
@@ -58,11 +59,19 @@ pub struct Seq {
     /// Next schedule ID.
     #[serde(default = "default_seq_one")]
     pub s: u64,
+    /// Next VPS peer ID.
+    #[serde(default = "default_seq_one")]
+    pub v: u64,
 }
 
 impl Default for Seq {
     fn default() -> Self {
-        Self { c: 1, b: 1, s: 1 }
+        Self {
+            c: 1,
+            b: 1,
+            s: 1,
+            v: 1,
+        }
     }
 }
 
@@ -89,6 +98,9 @@ pub struct StoreData {
     /// Configured cron schedules.
     #[serde(default)]
     pub schedules: Vec<Schedule>,
+    /// Configured remote VPS pull peers.
+    #[serde(default)]
+    pub vps_peers: Vec<VpsPeer>,
     /// Auto-increment sequence counters.
     #[serde(default)]
     pub _seq: Seq,
@@ -101,6 +113,7 @@ impl Default for StoreData {
             connections: Vec::new(),
             backups: Vec::new(),
             schedules: Vec::new(),
+            vps_peers: Vec::new(),
             _seq: Seq::default(),
         }
     }

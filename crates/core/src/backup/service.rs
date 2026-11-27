@@ -319,6 +319,14 @@ impl BackupService for DefaultBackupService {
                     }
                     (url, false)
                 }
+                RestoreTarget::MigrateDatabase(url) => {
+                    if url.is_blank() {
+                        return Err(BackupError::Validation(
+                            "Target database URL is required".to_string(),
+                        ));
+                    }
+                    (url, true)
+                }
             };
 
             let tool_status = self.tools.status().await;

@@ -8,6 +8,7 @@ import { PrimaryButton, GhostButton, DangerButton, WipeButton } from "../compone
 import { Badge } from "../components/badge.slint";
 import { CycleButton } from "../components/form_field.slint";
 import { Surface } from "../components/surface.slint";
+import { PageInfoButton } from "../components/page_guide.slint";
 
 export struct ConnectionRow {
     id: int,
@@ -23,6 +24,7 @@ export component ConnectionsPage inherits VerticalLayout {
     in property <string> type-filter-label: "All Types";
     in property <bool> backup-group-busy: false;
 
+    callback open-guide();
     callback add-connection();
     callback cycle-group-filter();
     callback cycle-type-filter();
@@ -42,13 +44,24 @@ export component ConnectionsPage inherits VerticalLayout {
         alignment: space-between;
         spacing: Space.s16;
         VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
             spacing: 4px;
-            Text {
-                text: "Connections";
-                font-family: Palette.font-ui;
-                font-size: Type.title;
-                font-weight: 600;
-                color: Palette.ink-1;
+            HorizontalLayout {
+                spacing: Space.s8;
+                Text {
+                    text: "Connections";
+                    font-family: Palette.font-ui;
+                    font-size: Type.title;
+                    font-weight: 600;
+                    color: Palette.ink-1;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    PageInfoButton {
+                        clicked => { root.open-guide(); }
+                    }
+                }
             }
             Text {
                 text: "PostgreSQL and MongoDB targets organised by group";
@@ -181,6 +194,7 @@ export component ConnectionsPage inherits VerticalLayout {
                                 Text {
                                     text: row.name;
                                     horizontal-stretch: 2;
+                                    min-width: 0px;
                                     font-family: Palette.font-ui;
                                     font-size: Type.body;
                                     font-weight: 500;
@@ -204,6 +218,7 @@ export component ConnectionsPage inherits VerticalLayout {
                                 if !compact: Text {
                                     text: row.masked-url;
                                     horizontal-stretch: 3;
+                                    min-width: 0px;
                                     font-family: Palette.font-mono;
                                     font-size: Type.min-label;
                                     color: Palette.ink-3;
@@ -213,6 +228,7 @@ export component ConnectionsPage inherits VerticalLayout {
 
                                 HorizontalLayout {
                                     width: 248px;
+                                    horizontal-stretch: 0;
                                     spacing: 6px;
                                     alignment: end;
 

@@ -1,6 +1,7 @@
 //! Slint UI composition, callback wiring, and background command dispatch.
 
 pub mod backups;
+pub mod bridge;
 pub mod connections;
 pub mod danger;
 pub mod dashboard;
@@ -9,6 +10,7 @@ pub mod setup;
 pub mod toast;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::process::ExitCode;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -17,6 +19,9 @@ use chrono::{Local, NaiveDateTime, TimeZone};
 use slint::{ComponentHandle, Weak};
 
 use chronobase_core::backup::{BackupStatus, RestoreTarget};
+use chronobase_core::bridge::{
+    CreateVpsPeerInput, PullTargetMode, UpdateVpsPeerInput, generate_pairing_key, key_fingerprint,
+};
 use chronobase_core::connection::{CreateConnectionInput, DbKind, UpdateConnectionInput};
 use chronobase_core::constant::ALL_GROUPS;
 use chronobase_core::schedule::CreateScheduleInput;
@@ -43,6 +48,7 @@ enum PendingConfirm {
     DeleteConnection(u64),
     DeleteBackup(u64),
     DeleteSchedule(u64),
+    DeleteVpsPeer(u64),
 }
 
 /// Formats a byte count into human-readable units (`0 B`, `1.4 KB`, `3.2 MB`, `1.1 GB`).
@@ -596,6 +602,9 @@ fn wire_callbacks(
                     PendingConfirm::DeleteSchedule(id) => {
                         rt.send(AppCommand::DeleteSchedule { id });
                     }
+                    PendingConfirm::DeleteVpsPeer(id) => {
+                        rt.send(AppCommand::DeleteVpsPeer { id });
+                    }
                 }
             }
         });
@@ -604,6 +613,320 @@ fn wire_callbacks(
         let pending = Rc::clone(&pending_confirm);
         window.on_confirm_cancelled(move || {
             pending.borrow_mut().take();
+        });
+    }
+
+    // Per-tab Page Guide (i) modal
+    {
+        let weak = window.as_weak();
+        window.on_open_page_guide(move |page| {
+            let Some(w) = weak.upgrade() else {
+                return;
+            };
+            let (title, purpose, s1, s2, s3, s4) = page_guide_content(page.as_str());
+            w.set_guide_title(title.into());
+            w.set_guide_purpose(purpose.into());
+            w.set_guide_step_1(s1.into());
+            w.set_guide_step_2(s2.into());
+            w.set_guide_step_3(s3.into());
+            w.set_guide_step_4(s4.into());
+            w.set_guide_open(true);
+        });
+    }
+
+    // VPS Pull Bridge & One-Click DB-to-DB Migrate
+    {
+        let weak = window.as_weak();
+        window.on_open_add_vps(move || {
+            if let Some(w) = weak.upgrade() {
+                w.set_vps_edit_id(-1);
+                w.set_vps_form_name("".into());
+                w.set_vps_form_endpoint("".into());
+                w.set_vps_form_type("postgres".into());
+                w.set_vps_form_remote_url("".into());
+                w.set_vps_form_key("".into());
+                w.set_vps_form_fingerprint("Generate or paste pairing key (min 16 chars)".into());
+                w.set_vps_form_target_id(0);
+                w.set_vps_form_target_label("Local backups/ storage ONLY".into());
+                w.set_vps_modal_open(true);
+            }
+        });
+    }
+    {
+        let st = Arc::clone(state);
+        let weak = window.as_weak();
+        window.on_open_edit_vps(move |id| {
+            let Ok(peer) = st.bridge_service.get_peer(id as u64) else {
+                return;
+            };
+            let conns = st
+                .connection_service
+                .list_filtered(None, None)
+                .unwrap_or_default();
+            let conn_names: HashMap<u64, String> =
+                conns.into_iter().map(|c| (c.id, c.name)).collect();
+            let (target_id, target_label) = match peer.target_mode {
+                PullTargetMode::StorageOnly => (0, "Local backups/ storage ONLY".to_string()),
+                PullTargetMode::LocalConnection(cid) => (
+                    cid as i32,
+                    bridge::format_target_label(peer.target_mode, &conn_names),
+                ),
+            };
+            let fp = key_fingerprint(&peer.pairing_key);
+            if let Some(w) = weak.upgrade() {
+                w.set_vps_edit_id(peer.id as i32);
+                w.set_vps_form_name(peer.name.into());
+                w.set_vps_form_endpoint(peer.endpoint.into());
+                w.set_vps_form_type(peer.db_type.as_str().into());
+                w.set_vps_form_remote_url(peer.remote_url.expose().into());
+                w.set_vps_form_key(peer.pairing_key.expose().into());
+                w.set_vps_form_fingerprint(fp.into());
+                w.set_vps_form_target_id(target_id);
+                w.set_vps_form_target_label(target_label.into());
+                w.set_vps_modal_open(true);
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_generate_vps_key(move || match generate_pairing_key() {
+            Ok(key) => {
+                let fp = key_fingerprint(&key);
+                if let Some(w) = weak.upgrade() {
+                    w.set_vps_form_key(key.expose().into());
+                    w.set_vps_form_fingerprint(fp.into());
+                }
+            }
+            Err(err) => {
+                show_toast(&weak, err.to_string(), ToastKind::Error);
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_preview_vps_fingerprint(move |key| {
+            let trimmed = key.trim();
+            let fp = if trimmed.len() >= 16 {
+                key_fingerprint(&Secret::new(trimmed.to_string()))
+            } else {
+                "Key must be at least 16 chars".to_string()
+            };
+            if let Some(w) = weak.upgrade() {
+                w.set_vps_form_fingerprint(fp.into());
+            }
+        });
+    }
+    {
+        let st = Arc::clone(state);
+        let weak = window.as_weak();
+        window.on_cycle_vps_target(move || {
+            let conns = st
+                .connection_service
+                .list_filtered(None, None)
+                .unwrap_or_default();
+            let mut options: Vec<(i32, String)> =
+                vec![(0, "Local backups/ storage ONLY".to_string())];
+            for c in conns {
+                options.push((
+                    c.id as i32,
+                    format!("Local DB: {} ({})", c.name, c.db_type.as_str()),
+                ));
+            }
+            if let Some(w) = weak.upgrade() {
+                let current = w.get_vps_form_target_id();
+                let idx = options
+                    .iter()
+                    .position(|(id, _)| *id == current)
+                    .map(|i| (i + 1) % options.len())
+                    .unwrap_or(0);
+                let (next_id, ref next_label) = options[idx];
+                w.set_vps_form_target_id(next_id);
+                w.set_vps_form_target_label(next_label.as_str().into());
+            }
+        });
+    }
+    {
+        let rt = Rc::clone(rt);
+        window.on_save_vps_peer(
+            move |edit_id, name, endpoint, db_type, remote_url, key, target_id| {
+                let target_mode = if target_id <= 0 {
+                    PullTargetMode::StorageOnly
+                } else {
+                    PullTargetMode::LocalConnection(target_id as u64)
+                };
+                let db_kind = if db_type == "mongodb" {
+                    DbKind::Mongodb
+                } else {
+                    DbKind::Postgres
+                };
+                if edit_id < 0 {
+                    rt.send(AppCommand::CreateVpsPeer {
+                        input: CreateVpsPeerInput {
+                            name: name.into(),
+                            endpoint: endpoint.into(),
+                            db_type: db_kind,
+                            remote_url: Secret::new(remote_url.to_string()),
+                            pairing_key: Secret::new(key.to_string()),
+                            target_mode,
+                        },
+                    });
+                } else {
+                    rt.send(AppCommand::UpdateVpsPeer {
+                        id: edit_id as u64,
+                        input: UpdateVpsPeerInput {
+                            name: name.into(),
+                            endpoint: endpoint.into(),
+                            db_type: db_kind,
+                            remote_url: Secret::new(remote_url.to_string()),
+                            pairing_key: Secret::new(key.to_string()),
+                            target_mode,
+                        },
+                    });
+                }
+            },
+        );
+    }
+    {
+        let rt = Rc::clone(rt);
+        let weak = window.as_weak();
+        window.on_pull_vps_peer(move |id| {
+            if let Some(w) = weak.upgrade() {
+                w.set_pull_busy(true);
+            }
+            rt.send(AppCommand::PullFromVps { peer_id: id as u64 });
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let pending = Rc::clone(&pending_confirm);
+        window.on_request_delete_vps_peer(move |id| {
+            *pending.borrow_mut() = Some(PendingConfirm::DeleteVpsPeer(id as u64));
+            if let Some(w) = weak.upgrade() {
+                w.set_confirm_title("Delete this VPS peer?".into());
+                w.set_confirm_body(
+                    "Removes this VPS peer configuration locally. Existing snapshots in backups/ are kept."
+                        .into(),
+                );
+                w.set_confirm_label("Delete VPS peer".into());
+                w.set_confirm_destructive(true);
+                w.set_confirm_open(true);
+            }
+        });
+    }
+    {
+        let st = Arc::clone(state);
+        let weak = window.as_weak();
+        window.on_open_migrate_modal(move || {
+            let conns = st
+                .connection_service
+                .list_filtered(None, None)
+                .unwrap_or_default();
+            if conns.len() < 2 {
+                show_toast(
+                    &weak,
+                    "Add at least two connections to migrate between DBs".to_string(),
+                    ToastKind::Error,
+                );
+                return;
+            }
+            let src = &conns[0];
+            let dst = conns
+                .iter()
+                .find(|c| c.id != src.id && c.db_type == src.db_type)
+                .unwrap_or(&conns[1]);
+            if let Some(w) = weak.upgrade() {
+                w.set_migrate_src_id(src.id as i32);
+                w.set_migrate_src_label(format!("{} ({})", src.name, src.db_type.as_str()).into());
+                w.set_migrate_dst_id(dst.id as i32);
+                w.set_migrate_dst_label(format!("{} ({})", dst.name, dst.db_type.as_str()).into());
+                w.set_migrate_busy(false);
+                w.set_migrate_modal_open(true);
+            }
+        });
+    }
+    {
+        let st = Arc::clone(state);
+        let weak = window.as_weak();
+        window.on_cycle_migrate_src(move || {
+            let conns = st
+                .connection_service
+                .list_filtered(None, None)
+                .unwrap_or_default();
+            if conns.is_empty() {
+                return;
+            }
+            if let Some(w) = weak.upgrade() {
+                let current = w.get_migrate_src_id();
+                let idx = conns
+                    .iter()
+                    .position(|c| c.id as i32 == current)
+                    .map(|i| (i + 1) % conns.len())
+                    .unwrap_or(0);
+                let next = &conns[idx];
+                w.set_migrate_src_id(next.id as i32);
+                w.set_migrate_src_label(
+                    format!("{} ({})", next.name, next.db_type.as_str()).into(),
+                );
+            }
+        });
+    }
+    {
+        let st = Arc::clone(state);
+        let weak = window.as_weak();
+        window.on_cycle_migrate_dst(move || {
+            let conns = st
+                .connection_service
+                .list_filtered(None, None)
+                .unwrap_or_default();
+            if conns.is_empty() {
+                return;
+            }
+            if let Some(w) = weak.upgrade() {
+                let src_id = w.get_migrate_src_id();
+                let candidates: Vec<_> = if conns.len() > 1 {
+                    conns.iter().filter(|c| c.id as i32 != src_id).collect()
+                } else {
+                    conns.iter().collect()
+                };
+                if candidates.is_empty() {
+                    return;
+                }
+                let current = w.get_migrate_dst_id();
+                let idx = candidates
+                    .iter()
+                    .position(|c| c.id as i32 == current)
+                    .map(|i| (i + 1) % candidates.len())
+                    .unwrap_or(0);
+                let next = candidates[idx];
+                w.set_migrate_dst_id(next.id as i32);
+                w.set_migrate_dst_label(
+                    format!("{} ({})", next.name, next.db_type.as_str()).into(),
+                );
+            }
+        });
+    }
+    {
+        let rt = Rc::clone(rt);
+        let weak = window.as_weak();
+        window.on_submit_migrate(move || {
+            let Some(w) = weak.upgrade() else {
+                return;
+            };
+            let src_id = w.get_migrate_src_id();
+            let dst_id = w.get_migrate_dst_id();
+            if src_id <= 0 || dst_id <= 0 || src_id == dst_id {
+                show_toast(
+                    &weak,
+                    "Choose two distinct connections to migrate".to_string(),
+                    ToastKind::Error,
+                );
+                return;
+            }
+            w.set_migrate_busy(true);
+            rt.send(AppCommand::MigrateDbToDb {
+                source_conn_id: src_id as u64,
+                dest_conn_id: dst_id as u64,
+            });
         });
     }
 }
@@ -814,6 +1137,106 @@ async fn handle_command(
                 Err(err) => show_toast(weak, err.to_string(), ToastKind::Error),
             }
         }
+        AppCommand::CreateVpsPeer { input } => match state.bridge_service.create_peer(input) {
+            Ok(_) => {
+                let weak_c = weak.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = weak_c.upgrade() {
+                        w.set_vps_modal_open(false);
+                    }
+                });
+                show_toast(weak, "VPS peer added".to_string(), ToastKind::Success);
+                refresh_all_views(&state, weak, filters).await;
+            }
+            Err(err) => show_toast(weak, err.to_string(), ToastKind::Error),
+        },
+        AppCommand::UpdateVpsPeer { id, input } => {
+            match state.bridge_service.update_peer(id, input) {
+                Ok(_) => {
+                    let weak_c = weak.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = weak_c.upgrade() {
+                            w.set_vps_modal_open(false);
+                        }
+                    });
+                    show_toast(weak, "VPS peer updated".to_string(), ToastKind::Success);
+                    refresh_all_views(&state, weak, filters).await;
+                }
+                Err(err) => show_toast(weak, err.to_string(), ToastKind::Error),
+            }
+        }
+        AppCommand::DeleteVpsPeer { id } => match state.bridge_service.delete_peer(id) {
+            Ok(()) => {
+                show_toast(weak, "VPS peer removed".to_string(), ToastKind::Info);
+                refresh_all_views(&state, weak, filters).await;
+            }
+            Err(err) => show_toast(weak, err.to_string(), ToastKind::Error),
+        },
+        AppCommand::PullFromVps { peer_id } => {
+            match state.bridge_service.pull_from_vps(peer_id).await {
+                Ok(res) => {
+                    let msg = format!(
+                        "Pulled {} ({}){}",
+                        res.peer_name,
+                        fmt_size(res.entry.file_size),
+                        if res.restored_to_local_db {
+                            " & restored to local DB"
+                        } else {
+                            " (VPS staging deleted)"
+                        }
+                    );
+                    show_toast(weak, msg, ToastKind::Success);
+                }
+                Err(err) => show_toast(weak, err.to_string(), ToastKind::Error),
+            }
+            let weak_c = weak.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = weak_c.upgrade() {
+                    w.set_pull_busy(false);
+                }
+            });
+            refresh_all_views(&state, weak, filters).await;
+        }
+        AppCommand::MigrateDbToDb {
+            source_conn_id,
+            dest_conn_id,
+        } => {
+            match state
+                .bridge_service
+                .migrate_db_to_db(source_conn_id, dest_conn_id)
+                .await
+            {
+                Ok(res) => {
+                    let weak_c = weak.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = weak_c.upgrade() {
+                            w.set_migrate_busy(false);
+                            w.set_migrate_modal_open(false);
+                        }
+                    });
+                    show_toast(
+                        weak,
+                        format!(
+                            "Migrated {} -> {} ({})",
+                            res.source_name,
+                            res.dest_name,
+                            fmt_size(res.entry.file_size)
+                        ),
+                        ToastKind::Success,
+                    );
+                    refresh_all_views(&state, weak, filters).await;
+                }
+                Err(err) => {
+                    let weak_c = weak.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = weak_c.upgrade() {
+                            w.set_migrate_busy(false);
+                        }
+                    });
+                    show_toast(weak, err.to_string(), ToastKind::Error);
+                }
+            }
+        }
         AppCommand::ResetEverything { confirm } => {
             match state.danger_service.reset_everything(&confirm) {
                 Ok(()) => {
@@ -831,6 +1254,76 @@ async fn handle_command(
     }
 }
 
+fn page_guide_content(
+    page: &str,
+) -> (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+) {
+    match page {
+        "connections" => (
+            "Connections Guide",
+            "Store PostgreSQL and MongoDB URLs organised by group. Credentials are redacted in logs and masked on screen.",
+            "Click Add connection, pick PostgreSQL or MongoDB, assign a group, and paste your connection URL.",
+            "Filter by Group or Type, then click Back up group to snapshot an entire environment together.",
+            "Run single-row Backup, Edit, or Wipe (requires confirmation) directly from any connection row.",
+            "Run `chronobase --headless` in Task Scheduler or systemd for unattended background execution.",
+        ),
+        "backups" => (
+            "Backups Guide",
+            "Browse local .sql and MongoDB BSON snapshots stored under backups/, inspect status/size, or restore into any database.",
+            "Filter backup history by group, engine type, or Success/Failed status.",
+            "Click Restore on any healthy snapshot to overwrite its source DB or clone into a different URL.",
+            "Failed runs record diagnostic tool output so you can spot wrong credentials or missing binaries quickly.",
+            "All backup files remain portable plain dumps inside your ChronoBase backups/ folder.",
+        ),
+        "schedules" => (
+            "Schedules Guide",
+            "Run automatic recurring snapshots on standard 5-field cron expressions using local wall-clock time.",
+            "Click Add schedule, give it a clear name, and cycle Target group (All Connections or one group).",
+            "Choose a preset chip (Daily 2am, Every 6h, Hourly, Weekly, Monthly) or enter custom 5-field cron.",
+            "Toggle switches let you pause or resume schedules at any time without losing settings.",
+            "Keep ChronoBase open or run `chronobase --headless` so scheduled jobs fire reliably.",
+        ),
+        "bridge" => (
+            "VPS & Migrate Guide",
+            "Pull encrypted snapshots from a remote VPS without exposing DB ports, OR migrate directly from one saved DB to another in one click.",
+            "On the VPS run `chronobase agent-init` to generate chronobase-agent.json (0600) & 256-bit key, then start `chronobase --agent --bind 0.0.0.0:9443`.",
+            "Click Add VPS peer here, enter the VPS endpoint, remote DB URL (localhost inside VPS), pairing key, and Local storage or Local DB target.",
+            "Click Pull Now: authenticates via mutual HMAC-SHA256 + ChaCha20-Poly1305 AEAD, checks SHA-256, and deletes the VPS staging dump automatically.",
+            "For two already configured local/remote connections, click Migrate DB -> DB and pick Source -> Destination in one click.",
+        ),
+        "setup" => (
+            "Setup Guide",
+            "Verify native PostgreSQL (pg_dump / psql) and MongoDB (mongodump / mongorestore) binaries are installed and discoverable.",
+            "Install PostgreSQL Client Tools and MongoDB Database Tools using the OS tabs below.",
+            "Click Re-check Tools in the header once installation completes to update sidebar pills.",
+            "ChronoBase scans PATH and common OS installation directories automatically.",
+            "For remote VPS pulls, install these same DB tools on the VPS where `chronobase --agent` runs.",
+        ),
+        "danger" => (
+            "Danger Zone Guide",
+            "Execute irreversible storage cleanup or a complete application reset with explicit typed confirmation.",
+            "Delete all backup files wipes backups/ contents and backup history while keeping Connections, Schedules, and VPS peers.",
+            "Reset everything clears connections, schedules, VPS peers, history, and files on disk back to a blank state.",
+            "Both modals require typing the exact uppercase confirmation phrase before the destructive action enables.",
+            "Need to empty just one database? Use Wipe on that specific row inside the Connections tab.",
+        ),
+        _ => (
+            "Dashboard Guide",
+            "Monitor overall protection status, total snapshots, disk usage, active schedules, and kick off an immediate Back up all.",
+            "Add databases under Connections or configure a remote VPS peer under VPS & Migrate.",
+            "Click Back up all in the header to run snapshots concurrently across all connections.",
+            "Use Quick navigation tiles to jump straight to Schedules, Backups, VPS Pull, or Setup.",
+            "Check Recent snapshots below for instant visibility into status, size, and relative timestamp.",
+        ),
+    }
+}
+
 async fn refresh_all_views(
     state: &Arc<AppState>,
     weak: &Weak<MainWindow>,
@@ -844,11 +1337,11 @@ async fn refresh_all_views(
         .unwrap_or_default();
     dashboard::push_dashboard(weak, stats, all_backups);
 
-    let total_conns = state
+    let all_conns = state
         .connection_service
         .list_filtered(None, None)
-        .map(|v| v.len())
-        .unwrap_or(0);
+        .unwrap_or_default();
+    let total_conns = all_conns.len();
     if let Ok(conns) = state
         .connection_service
         .list_filtered(f.conn_group.as_deref(), f.conn_type)
@@ -866,6 +1359,10 @@ async fn refresh_all_views(
 
     if let Ok(scheds) = state.schedule_service.list() {
         schedules::push_schedules(weak, scheds);
+    }
+
+    if let Ok(peers) = state.bridge_service.list_peers() {
+        bridge::push_vps_peers(weak, peers, &all_conns);
     }
 
     let tools = state.tool_discovery.status().await;

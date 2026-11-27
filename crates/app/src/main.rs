@@ -12,6 +12,9 @@ use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
 use chronobase_core::backup::{BackupRunResult, BackupStatus};
+use chronobase_core::bridge::{
+    DEFAULT_AGENT_BIND, init_agent_config, load_agent_config, run_agent_server,
+};
 use chronobase_core::constant::ALL_GROUPS;
 use chronobase_core::platform;
 use chronobase_core::store::JsonStore;
@@ -21,6 +24,16 @@ use crate::bootstrap::AppState;
 enum CliAction {
     Gui,
     Headless,
+    Agent {
+        bind: Option<String>,
+        allow_ips: Vec<String>,
+    },
+    AgentInit {
+        bind: Option<String>,
+    },
+    PullVps {
+        target: String,
+    },
     BackupAll,
     BackupGroup(String),
     List,
@@ -38,6 +51,9 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut data_dir: Option<PathBuf> = None;
     let mut positional: Vec<String> = Vec::new();
     let mut headless = false;
+    let mut agent = false;
+    let mut bind: Option<String> = None;
+    let mut allow_ips: Vec<String> = Vec::new();
     let mut backup_all = false;
     let mut backup_group: Option<String> = None;
 
@@ -56,6 +72,19 @@ fn parse_args() -> Result<CliArgs, String> {
                 });
             }
             "--headless" => headless = true,
+            "--agent" => agent = true,
+            "--bind" => {
+                let val = args
+                    .next()
+                    .ok_or_else(|| "--bind requires a host:port argument".to_string())?;
+                bind = Some(val);
+            }
+            "--allow-ip" => {
+                let val = args
+                    .next()
+                    .ok_or_else(|| "--allow-ip requires an IP address".to_string())?;
+                allow_ips.push(val);
+            }
             "--data-dir" => {
                 let val = args
                     .next()
@@ -76,11 +105,21 @@ fn parse_args() -> Result<CliArgs, String> {
         }
     }
 
-    let action = if headless {
+    let action = if agent {
+        CliAction::Agent { bind, allow_ips }
+    } else if headless {
         CliAction::Headless
     } else if let Some(cmd) = positional.first() {
         match cmd.as_str() {
             "list" => CliAction::List,
+            "agent-init" => CliAction::AgentInit { bind },
+            "pull" => {
+                let target = positional
+                    .get(1)
+                    .cloned()
+                    .ok_or_else(|| "Usage: chronobase pull <vps-name-or-id>".to_string())?;
+                CliAction::PullVps { target }
+            }
             "backup" => {
                 if backup_all {
                     CliAction::BackupAll
@@ -133,9 +172,14 @@ fn print_help() {
          COMMANDS:\n  \
            backup --all             Run backups for all connections\n  \
            backup --group <name>    Run backups for a specific group\n  \
-           list                     List connections, schedules, and recent backups\n\n\
+           list                     List connections, schedules, and recent backups\n  \
+           agent-init               Generate VPS pairing key and chronobase-agent.json (0600)\n  \
+           pull <vps-name-or-id>    Pull a verified encrypted backup from a configured VPS peer\n\n\
          OPTIONS:\n  \
            --headless               Run background scheduler without GUI\n  \
+           --agent                  Run the secure VPS Pull Agent TCP server\n  \
+           --bind <host:port>       Override VPS agent listen address (default: {DEFAULT_AGENT_BIND})\n  \
+           --allow-ip <ip>          Allowlist client IP for --agent (repeatable)\n  \
            --data-dir <path>        Override data directory (or set CHRONOBASE_HOME)\n  \
            -h, --help               Print this help message\n  \
            -V, --version            Print version",
@@ -323,6 +367,133 @@ async fn wait_for_shutdown_signal() {
     }
 }
 
+fn run_cli_agent_init(data_dir: &std::path::Path, bind: Option<&str>) -> ExitCode {
+    match init_agent_config(data_dir, bind) {
+        Ok((path, key, fingerprint)) => {
+            let bind_str = bind.unwrap_or(DEFAULT_AGENT_BIND);
+            println!("ChronoBase VPS Agent initialized: {}", path.display());
+            println!("Bind address:        {bind_str}");
+            println!("SHA-256 fingerprint: {fingerprint}");
+            println!("Pairing key (copy into ChronoBase -> VPS & Migrate -> Add VPS):");
+            println!("  {}", key.expose());
+            println!();
+            println!("Start the VPS agent with:");
+            println!(
+                "  chronobase --agent --bind {bind_str} --data-dir {}",
+                data_dir.display()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Failed to initialize VPS agent config: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_cli_agent(data_dir: PathBuf, bind: Option<String>, allow_ips: Vec<String>) -> ExitCode {
+    let config = match load_agent_config(&data_dir, bind.as_deref(), allow_ips) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("Failed to initialize runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    rt.block_on(async move {
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        println!(
+            "ChronoBase VPS Pull Agent listening on {} (data_dir: {})",
+            config.bind_addr,
+            data_dir.display()
+        );
+        tokio::select! {
+            res = run_agent_server(data_dir, config, shutdown_rx) => {
+                if let Err(err) = res {
+                    eprintln!("VPS agent exited with error: {err}");
+                    return ExitCode::FAILURE;
+                }
+                ExitCode::SUCCESS
+            }
+            () = wait_for_shutdown_signal() => {
+                tracing::info!("shutdown signal received, stopping VPS agent");
+                let _ = shutdown_tx.send(true);
+                ExitCode::SUCCESS
+            }
+        }
+    })
+}
+
+fn run_cli_pull(state: Arc<AppState>, target: &str) -> ExitCode {
+    let peers = match state.bridge_service.list_peers() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Failed to read VPS peers: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let peer_id = if let Ok(id) = target.parse::<u64>() {
+        peers.iter().find(|p| p.id == id).map(|p| p.id)
+    } else {
+        peers
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case(target))
+            .map(|p| p.id)
+    };
+
+    let Some(peer_id) = peer_id else {
+        eprintln!("No VPS peer found matching '{target}'.");
+        return ExitCode::FAILURE;
+    };
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("Failed to initialize runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    rt.block_on(async move {
+        let exit = match state.bridge_service.pull_from_vps(peer_id).await {
+            Ok(res) => {
+                println!(
+                    "OK {} -> {} ({} bytes, remote staging deleted: {}, migrated to local DB: {})",
+                    res.peer_name,
+                    res.entry.file_path,
+                    res.entry.file_size,
+                    res.remote_deleted,
+                    res.restored_to_local_db
+                );
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("VPS pull failed: {e}");
+                ExitCode::FAILURE
+            }
+        };
+        if let Err(e) = state.store.flush_now() {
+            eprintln!("Warning: failed to flush store: {e}");
+        }
+        exit
+    })
+}
+
 fn main() -> ExitCode {
     let parsed = match parse_args() {
         Ok(a) => a,
@@ -357,6 +528,16 @@ fn main() -> ExitCode {
         }
     };
 
+    match parsed.action {
+        CliAction::AgentInit { bind } => {
+            return run_cli_agent_init(&data_dir, bind.as_deref());
+        }
+        CliAction::Agent { bind, allow_ips } => {
+            return run_cli_agent(data_dir, bind, allow_ips);
+        }
+        _ => {}
+    }
+
     let state = match AppState::build(&data_dir) {
         Ok(s) => Arc::new(s),
         Err(e) => {
@@ -367,10 +548,14 @@ fn main() -> ExitCode {
 
     match parsed.action {
         CliAction::List => run_cli_list(&state),
+        CliAction::PullVps { target } => run_cli_pull(state, &target),
         CliAction::BackupAll => run_cli_backup(state, ALL_GROUPS),
         CliAction::BackupGroup(group) => run_cli_backup(state, &group),
         CliAction::Headless => run_headless(state),
         CliAction::Gui => ui::run_gui(state),
-        CliAction::Help | CliAction::Version => ExitCode::SUCCESS,
+        CliAction::Help
+        | CliAction::Version
+        | CliAction::AgentInit { .. }
+        | CliAction::Agent { .. } => ExitCode::SUCCESS,
     }
 }
