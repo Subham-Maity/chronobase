@@ -10,7 +10,7 @@ use chronobase_core::backup::RestoreTarget;
 use chronobase_core::bridge::{CreateVpsPeerInput, MigrateEndpoint, UpdateVpsPeerInput};
 use chronobase_core::connection::{CreateConnectionInput, DbKind, UpdateConnectionInput};
 use chronobase_core::retention::{CleanupFrequency, RetentionPolicy};
-use chronobase_core::schedule::CreateScheduleInput;
+use chronobase_core::schedule::{CreateScheduleInput, ScheduleFailureEvent};
 use chronobase_core::store::JsonStore;
 
 use crate::bootstrap::AppState;
@@ -78,6 +78,8 @@ pub enum AppCommand {
     PreviewRetention,
     /// Execute retention cleanup immediately.
     RunRetentionNow,
+    /// Emitted when one or more backups fail during a scheduled cron run.
+    ScheduleFailed(ScheduleFailureEvent),
     /// Danger Zone: delete all backup files (`DELETE BACKUPS`).
     DeleteAllBackups { confirm: String },
     /// Danger Zone: reset everything (`DELETE EVERYTHING`).
@@ -136,6 +138,7 @@ impl BackgroundRuntime {
                         JsonStore::spawn_flush_loop(Arc::clone(&state.store), shutdown_rx.clone());
                     let sched_handle =
                         Arc::clone(&state.schedule_runner).spawn(shutdown_rx.clone());
+                    let mut failure_rx = state.schedule_runner.subscribe_failures();
 
                     let handler = Arc::new(on_command);
                     loop {
@@ -151,6 +154,13 @@ impl BackgroundRuntime {
                                     }
                                     None => break,
                                 }
+                            }
+                            Ok(ev) = failure_rx.recv() => {
+                                let st = Arc::clone(&state);
+                                let h = Arc::clone(&handler);
+                                tokio::spawn(async move {
+                                    h(st, AppCommand::ScheduleFailed(ev)).await;
+                                });
                             }
                             changed = shutdown_rx.changed() => {
                                 if changed.is_err() || *shutdown_rx.borrow() {

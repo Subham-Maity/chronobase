@@ -1780,6 +1780,16 @@ async fn handle_command(
             });
             refresh_all_views(&state, weak, filters).await;
         }
+        AppCommand::ScheduleFailed(ev) => {
+            let msg = format!(
+                "Schedule '{}' failed ({}): {}",
+                ev.schedule_name,
+                ev.failed_connections.join(", "),
+                ev.error_summary
+            );
+            show_toast(weak, msg, ToastKind::Error);
+            refresh_all_views(&state, weak, filters).await;
+        }
         AppCommand::ResetEverything { confirm } => {
             match state.danger_service.reset_everything(&confirm) {
                 Ok(()) => {
