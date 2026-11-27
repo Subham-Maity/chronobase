@@ -3,8 +3,9 @@
 import { ListView } from "std-widgets.slint";
 import { Palette, Type, Space, Motion } from "../theme.slint";
 import { Icons, Icon } from "../icons.slint";
-import { PrimaryButton, DangerButton } from "../components/buttons.slint";
+import { PrimaryButton, GhostButton, DangerButton } from "../components/buttons.slint";
 import { Badge } from "../components/badge.slint";
+import { FormField, Chip } from "../components/form_field.slint";
 import { Surface } from "../components/surface.slint";
 import { PageInfoButton } from "../components/page_guide.slint";
 
@@ -73,11 +74,23 @@ component ScheduleSwitch inherits Rectangle {
 
 export component SchedulesPage inherits VerticalLayout {
     in property <[ScheduleRow]> rows: [];
+    in-out property <bool> retention-enabled: false;
+    in-out property <string> retention-keep-last: "";
+    in-out property <string> retention-max-age: "";
+    in-out property <string> retention-failed-age: "7";
+    in-out property <string> retention-freq-kind: "daily";
+    in-out property <string> retention-custom-cron: "0 3 * * *";
+    in property <string> retention-preview-text: "";
+    in property <bool> retention-busy: false;
 
     callback open-guide();
+    callback open-retention-guide();
     callback add-schedule();
     callback toggle-schedule(int);
     callback delete-schedule(int);
+    callback save-retention(bool, string, string, string, string, string);
+    callback preview-retention(bool, string, string, string, string, string);
+    callback run-retention-now();
 
     padding: Space.s32;
     spacing: Space.s24;
@@ -265,6 +278,173 @@ export component SchedulesPage inherits VerticalLayout {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // Automatic Backup Retention Card
+    Surface {
+        VerticalLayout {
+            padding: Space.s16;
+            spacing: Space.s12;
+
+            HorizontalLayout {
+                alignment: space-between;
+                spacing: Space.s12;
+
+                HorizontalLayout {
+                    spacing: Space.s8;
+                    alignment: start;
+                    Text {
+                        text: "Automatic Retention";
+                        font-family: Palette.font-ui;
+                        font-size: Type.section;
+                        font-weight: 600;
+                        color: Palette.ink-1;
+                        vertical-alignment: center;
+                    }
+                    PageInfoButton {
+                        clicked => { root.open-retention-guide(); }
+                    }
+                }
+
+                ScheduleSwitch {
+                    checked: retention-enabled;
+                    toggled => {
+                        retention-enabled = !retention-enabled;
+                        root.save-retention(
+                            retention-enabled,
+                            retention-keep-last,
+                            retention-max-age,
+                            retention-failed-age,
+                            retention-freq-kind,
+                            retention-custom-cron
+                        );
+                    }
+                }
+            }
+
+            Text {
+                text: "Keep-last and max-age are both limits; the newest good backup per database is always kept.";
+                font-family: Palette.font-ui;
+                font-size: Type.min-label;
+                color: Palette.ink-3;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: Space.s12;
+                FormField {
+                    horizontal-stretch: 1;
+                    label: "Keep last (count)";
+                    value <=> retention-keep-last;
+                    mono: true;
+                    placeholder: "e.g. 14 (blank = off)";
+                }
+                FormField {
+                    horizontal-stretch: 1;
+                    label: "Max age (days)";
+                    value <=> retention-max-age;
+                    mono: true;
+                    placeholder: "e.g. 30 (blank = off)";
+                }
+                FormField {
+                    horizontal-stretch: 1;
+                    label: "Failed age (days)";
+                    value <=> retention-failed-age;
+                    mono: true;
+                    placeholder: "7";
+                }
+            }
+
+            HorizontalLayout {
+                spacing: Space.s8;
+                alignment: start;
+                Text {
+                    text: "Cleanup cadence:";
+                    font-family: Palette.font-ui;
+                    font-size: Type.min-label;
+                    color: Palette.ink-3;
+                    vertical-alignment: center;
+                }
+                Chip {
+                    text: "Daily";
+                    selected: retention-freq-kind == "daily";
+                    clicked => { retention-freq-kind = "daily"; }
+                }
+                Chip {
+                    text: "Weekly";
+                    selected: retention-freq-kind == "weekly";
+                    clicked => { retention-freq-kind = "weekly"; }
+                }
+                Chip {
+                    text: "Monthly";
+                    selected: retention-freq-kind == "monthly";
+                    clicked => { retention-freq-kind = "monthly"; }
+                }
+                Chip {
+                    text: "Custom";
+                    selected: retention-freq-kind == "custom";
+                    clicked => { retention-freq-kind = "custom"; }
+                }
+                if retention-freq-kind == "custom": FormField {
+                    width: 170px;
+                    value <=> retention-custom-cron;
+                    mono: true;
+                    placeholder: "0 3 * * *";
+                }
+            }
+
+            HorizontalLayout {
+                alignment: space-between;
+                spacing: Space.s12;
+
+                Text {
+                    text: retention-preview-text;
+                    horizontal-stretch: 1;
+                    font-family: Palette.font-ui;
+                    font-size: Type.secondary;
+                    color: Palette.signal;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                HorizontalLayout {
+                    spacing: Space.s8;
+                    GhostButton {
+                        text: "Preview";
+                        enabled: !retention-busy;
+                        clicked => {
+                            root.preview-retention(
+                                retention-enabled,
+                                retention-keep-last,
+                                retention-max-age,
+                                retention-failed-age,
+                                retention-freq-kind,
+                                retention-custom-cron
+                            );
+                        }
+                    }
+                    GhostButton {
+                        text: "Save policy";
+                        enabled: !retention-busy;
+                        clicked => {
+                            root.save-retention(
+                                retention-enabled,
+                                retention-keep-last,
+                                retention-max-age,
+                                retention-failed-age,
+                                retention-freq-kind,
+                                retention-custom-cron
+                            );
+                        }
+                    }
+                    DangerButton {
+                        text: retention-busy ? "Cleaning..." : "Run cleanup now";
+                        enabled: !retention-busy;
+                        clicked => { root.run-retention-now(); }
                     }
                 }
             }

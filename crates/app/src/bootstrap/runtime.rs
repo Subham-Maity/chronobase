@@ -9,6 +9,7 @@ use tokio::sync::{mpsc, watch};
 use chronobase_core::backup::RestoreTarget;
 use chronobase_core::bridge::{CreateVpsPeerInput, MigrateEndpoint, UpdateVpsPeerInput};
 use chronobase_core::connection::{CreateConnectionInput, DbKind, UpdateConnectionInput};
+use chronobase_core::retention::{CleanupFrequency, RetentionPolicy};
 use chronobase_core::schedule::CreateScheduleInput;
 use chronobase_core::store::JsonStore;
 
@@ -68,6 +69,15 @@ pub enum AppCommand {
     SetRunInBackground { enabled: bool },
     /// Toggle launching ChronoBase minimized to tray at OS login.
     SetRunOnStartup { enabled: bool },
+    /// Update global retention policy and cleanup frequency.
+    UpdateRetentionPolicy {
+        policy: RetentionPolicy,
+        frequency: CleanupFrequency,
+    },
+    /// Preview retention cleanup without deleting any files.
+    PreviewRetention,
+    /// Execute retention cleanup immediately.
+    RunRetentionNow,
     /// Danger Zone: delete all backup files (`DELETE BACKUPS`).
     DeleteAllBackups { confirm: String },
     /// Danger Zone: reset everything (`DELETE EVERYTHING`).

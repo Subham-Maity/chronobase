@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::retention::RetentionPolicy;
 use crate::secret::Secret;
 
 /// Supported database engines.
@@ -51,6 +52,9 @@ pub struct Connection {
     pub notes: String,
     /// Creation timestamp (`YYYY-MM-DD HH:MM:SS` local time, matching v1).
     pub created_at: String,
+    /// Optional per-connection backup retention override (`None` = use global policy).
+    #[serde(default)]
+    pub retention: Option<RetentionPolicy>,
 }
 
 /// Input payload for creating a new connection.
@@ -66,6 +70,8 @@ pub struct CreateConnectionInput {
     pub url: Secret,
     /// Optional notes.
     pub notes: String,
+    /// Optional per-connection retention override.
+    pub retention: Option<RetentionPolicy>,
 }
 
 /// Input payload for updating an existing connection.
@@ -81,4 +87,6 @@ pub struct UpdateConnectionInput {
     pub url: Secret,
     /// Updated notes.
     pub notes: String,
+    /// Optional per-connection retention override.
+    pub retention: Option<RetentionPolicy>,
 }

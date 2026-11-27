@@ -11,6 +11,10 @@ pub enum SystemError {
     #[error("Confirmation phrase does not match")]
     ConfirmPhraseMismatch,
 
+    /// Invalid configuration or retention policy value.
+    #[error("{0}")]
+    Validation(String),
+
     /// Underlying persistence or filesystem error.
     #[error(transparent)]
     Store(#[from] StoreError),

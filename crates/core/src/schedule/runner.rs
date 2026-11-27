@@ -13,14 +13,18 @@ use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 
 use crate::bridge::BridgeService;
+use crate::retention::RetentionService;
 use crate::schedule::{Schedule, ScheduleRepository, parse_cron_expr};
+use crate::store::JsonStore;
 
-/// Coordinates the single background scheduler task.
+/// Coordinates the single background scheduler task (cron schedules + periodic retention cleanup).
 pub struct ScheduleRunner {
     repo: Arc<dyn ScheduleRepository>,
     bridge_service: Arc<dyn BridgeService>,
     reload_notify: Arc<Notify>,
     in_flight: Arc<Mutex<HashSet<u64>>>,
+    store: Option<Arc<JsonStore>>,
+    retention_service: Option<Arc<dyn RetentionService>>,
 }
 
 impl ScheduleRunner {
@@ -35,13 +39,28 @@ impl ScheduleRunner {
             bridge_service,
             reload_notify,
             in_flight: Arc::new(Mutex::new(HashSet::new())),
+            store: None,
+            retention_service: None,
         }
+    }
+
+    /// Attaches [`JsonStore`] and [`RetentionService`] so [`ScheduleRunner`] also runs
+    /// periodic retention cleanup on the user's configured cleanup frequency.
+    pub fn with_retention(
+        mut self,
+        store: Arc<JsonStore>,
+        retention_service: Arc<dyn RetentionService>,
+    ) -> Self {
+        self.store = Some(store);
+        self.retention_service = Some(retention_service);
+        self
     }
 
     /// Spawns the single scheduler loop and returns its [`JoinHandle`].
     pub fn spawn(self: Arc<Self>, mut shutdown: watch::Receiver<bool>) -> JoinHandle<()> {
         tokio::spawn(async move {
             let mut next_runs: HashMap<u64, DateTime<Local>> = HashMap::new();
+            let mut next_cleanup: Option<DateTime<Local>> = None;
             let mut active_tasks: Vec<JoinHandle<()>> = Vec::new();
 
             loop {
@@ -65,6 +84,39 @@ impl ScheduleRunner {
                         && let Some(next_dt) = compute_next_due(sched, now)
                     {
                         next_runs.insert(sched.id, next_dt);
+                    }
+                }
+
+                // Compute / trigger periodic retention cleanup if enabled.
+                if let (Some(store), Some(ret_svc)) = (&self.store, &self.retention_service) {
+                    let settings = store.read_with(|d| d.settings.clone());
+                    if settings.retention.enabled {
+                        if next_cleanup.is_none() {
+                            next_cleanup =
+                                compute_next_cron_due(settings.cleanup_frequency.cron_expr(), now);
+                        }
+                        if next_cleanup.is_some_and(|dt| dt <= now) {
+                            next_cleanup =
+                                compute_next_cron_due(settings.cleanup_frequency.cron_expr(), now);
+                            let svc = Arc::clone(ret_svc);
+                            let handle = tokio::spawn(async move {
+                                match svc.run().await {
+                                    Ok(report) => tracing::info!(
+                                        deleted = report.deleted_count,
+                                        bytes_freed = report.bytes_freed,
+                                        errors = report.errors.len(),
+                                        "scheduled retention cleanup finished"
+                                    ),
+                                    Err(err) => tracing::error!(
+                                        error = %err,
+                                        "scheduled retention cleanup failed"
+                                    ),
+                                }
+                            });
+                            active_tasks.push(handle);
+                        }
+                    } else {
+                        next_cleanup = None;
                     }
                 }
 
@@ -96,16 +148,18 @@ impl ScheduleRunner {
                     }
                 }
 
-                // Sleep until the earliest next_run (or wait for reload/shutdown if none).
-                let wait_duration = next_runs.values().min().map(|earliest| {
-                    let diff = *earliest - Local::now();
+                // Sleep until the earliest next_run or next_cleanup (or wait for reload/shutdown if none).
+                let earliest = next_runs.values().chain(next_cleanup.iter()).min().copied();
+                let wait_duration = earliest.map(|dt| {
+                    let diff = dt - Local::now();
                     diff.to_std().unwrap_or(Duration::from_millis(50))
                 });
 
                 tokio::select! {
                     _ = self.reload_notify.notified() => {
-                        // Schedule list changed; recompute next_runs immediately.
+                        // Schedule list or retention frequency changed; recompute immediately.
                         next_runs.clear();
+                        next_cleanup = None;
                     }
                     changed = shutdown.changed() => {
                         if changed.is_err() || *shutdown.borrow() {
@@ -163,6 +217,23 @@ impl ScheduleRunner {
                     total = results.len(),
                     "scheduled backup batch finished"
                 );
+                if let Some(ref ret_svc) = self.retention_service {
+                    let mut seen = HashSet::new();
+                    for res in results
+                        .iter()
+                        .filter(|r| r.entry.status == crate::backup::BackupStatus::Success)
+                    {
+                        if seen.insert(res.connection_id)
+                            && let Err(err) = ret_svc.run_for_connection(res.connection_id).await
+                        {
+                            tracing::error!(
+                                connection_id = res.connection_id,
+                                error = %err,
+                                "post-schedule retention failed"
+                            );
+                        }
+                    }
+                }
             }
             Err(err) => {
                 tracing::error!(
@@ -182,6 +253,16 @@ impl ScheduleRunner {
         }
 
         self.clear_in_flight(sched.id);
+    }
+}
+
+fn compute_next_cron_due(cron_expr: &str, after: DateTime<Local>) -> Option<DateTime<Local>> {
+    match parse_cron_expr(cron_expr) {
+        Ok(parsed) => parsed.after(&after).next(),
+        Err(err) => {
+            tracing::warn!(error = %err, "ignoring invalid cleanup cron expression");
+            None
+        }
     }
 }
 

@@ -161,6 +161,7 @@ mod tests {
             db_type: DbKind::Postgres,
             url: Secret::new("mongodb://localhost:27017/db"),
             notes: "".into(),
+            retention: None,
         });
         assert!(matches!(bad, Err(ConnectionError::Validation(_))));
 
@@ -171,6 +172,7 @@ mod tests {
                 db_type: DbKind::Postgres,
                 url: Secret::new("postgresql://user:pass@localhost:5432/db"),
                 notes: "main".into(),
+                retention: None,
             })
             .expect("create");
         assert_eq!(created.group_name, "Default");

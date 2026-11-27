@@ -38,6 +38,9 @@ enum CliAction {
     },
     BackupAll,
     BackupGroup(String),
+    Cleanup {
+        dry_run: bool,
+    },
     List,
     Help,
     Version,
@@ -59,6 +62,7 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut allow_ips: Vec<String> = Vec::new();
     let mut backup_all = false;
     let mut backup_group: Option<String> = None;
+    let mut dry_run = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -76,6 +80,7 @@ fn parse_args() -> Result<CliArgs, String> {
             }
             "--headless" => headless = true,
             "--tray" | "--minimized" => start_in_tray = true,
+            "--dry-run" => dry_run = true,
             "--agent" => agent = true,
             "--bind" => {
                 let val = args
@@ -133,6 +138,7 @@ fn parse_args() -> Result<CliArgs, String> {
                     return Err("Usage: chronobase backup --all | --group <name>".to_string());
                 }
             }
+            "cleanup" => CliAction::Cleanup { dry_run },
             other => return Err(format!("Unknown command: {other}")),
         }
     } else {
@@ -176,6 +182,7 @@ fn print_help() {
          COMMANDS:\n  \
            backup --all             Run backups for all connections\n  \
            backup --group <name>    Run backups for a specific group\n  \
+           cleanup [--dry-run]      Run backup retention cleanup (or preview with --dry-run)\n  \
            list                     List connections, schedules, and recent backups\n  \
            agent-init               Generate VPS pairing key and chronobase-agent.json (0600)\n  \
            pull <vps-name-or-id>    Pull a verified encrypted backup from a configured VPS peer\n\n\
@@ -299,6 +306,21 @@ fn run_cli_backup(state: Arc<AppState>, group: &str) -> ExitCode {
                     }
                 }
             }
+            if !any_failed {
+                let mut seen = std::collections::HashSet::new();
+                for r in list
+                    .iter()
+                    .filter(|r| r.entry.status == BackupStatus::Success)
+                {
+                    if seen.insert(r.connection_id)
+                        && let Err(e) =
+                            rt.block_on(state.retention_service.run_for_connection(r.connection_id))
+                    {
+                        eprintln!("Warning: post-backup retention failed: {e}");
+                    }
+                }
+                let _ = state.store.flush_now();
+            }
             if any_failed {
                 ExitCode::FAILURE
             } else {
@@ -334,6 +356,18 @@ fn run_headless(state: Arc<AppState>) -> ExitCode {
             data_dir = %state.store.data_dir().display(),
             "ChronoBase headless scheduler started"
         );
+
+        if state.settings_service.get().retention.enabled {
+            match state.retention_service.run().await {
+                Ok(report) => tracing::info!(
+                    deleted = report.deleted_count,
+                    bytes_freed = report.bytes_freed,
+                    errors = report.errors.len(),
+                    "startup retention cleanup finished"
+                ),
+                Err(err) => tracing::error!(error = %err, "startup retention cleanup failed"),
+            }
+        }
 
         wait_for_shutdown_signal().await;
         tracing::info!("shutdown signal received, flushing store");
@@ -499,6 +533,71 @@ fn run_cli_pull(state: Arc<AppState>, target: &str) -> ExitCode {
     })
 }
 
+fn run_cli_cleanup(state: Arc<AppState>, dry_run: bool) -> ExitCode {
+    if dry_run {
+        return match state.retention_service.preview() {
+            Ok(plan) => {
+                for cand in &plan.candidates {
+                    println!(
+                        "DRY-RUN DELETE #{} [{}] {} ({} bytes)",
+                        cand.entry.id,
+                        cand.reason.as_str(),
+                        cand.entry.file_path,
+                        cand.entry.file_size
+                    );
+                }
+                println!(
+                    "Preview: {} snapshot(s), {} would be freed.",
+                    plan.to_delete.len(),
+                    ui::fmt_size(plan.bytes_freed)
+                );
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("Retention preview failed: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("Failed to initialize runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let res = rt.block_on(state.retention_service.run());
+    if let Err(e) = state.store.flush_now() {
+        eprintln!("Warning: failed to flush store: {e}");
+    }
+
+    match res {
+        Ok(report) => {
+            println!(
+                "Deleted {} snapshot(s), freed {}.",
+                report.deleted_count,
+                ui::fmt_size(report.bytes_freed)
+            );
+            if !report.errors.is_empty() {
+                for err in &report.errors {
+                    eprintln!("Error: {err}");
+                }
+                return ExitCode::FAILURE;
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Retention cleanup failed: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let parsed = match parse_args() {
         Ok(a) => a,
@@ -556,6 +655,7 @@ fn main() -> ExitCode {
         CliAction::PullVps { target } => run_cli_pull(state, &target),
         CliAction::BackupAll => run_cli_backup(state, ALL_GROUPS),
         CliAction::BackupGroup(group) => run_cli_backup(state, &group),
+        CliAction::Cleanup { dry_run } => run_cli_cleanup(state, dry_run),
         CliAction::Headless => run_headless(state),
         CliAction::Gui { start_in_tray } => ui::run_gui(state, start_in_tray),
         CliAction::Help

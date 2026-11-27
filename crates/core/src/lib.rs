@@ -9,6 +9,7 @@ pub mod connection;
 pub mod constant;
 pub mod error;
 pub mod platform;
+pub mod retention;
 pub mod schedule;
 pub mod secret;
 pub mod slug;

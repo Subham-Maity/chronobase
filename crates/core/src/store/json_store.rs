@@ -21,6 +21,7 @@ use crate::constant::{
     BACKUPS_DIR_NAME, CURRENT_SCHEMA_VERSION, DATA_FILE_NAME, LOCK_FILE_NAME, STORE_FLUSH_DEBOUNCE,
 };
 use crate::platform;
+use crate::retention::{CleanupFrequency, RetentionPolicy};
 use crate::schedule::Schedule;
 
 /// Errors returned by the JSON persistence layer.
@@ -83,7 +84,7 @@ fn default_v1_schema_version() -> u32 {
     1
 }
 
-/// User-configurable desktop background & startup preferences.
+/// User-configurable desktop background, startup, and backup retention preferences.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppSettings {
     /// When `true`, closing the main window hides it to the system tray so cron schedules keep running.
@@ -92,12 +93,21 @@ pub struct AppSettings {
     /// When `true`, ChronoBase is registered to launch minimized (`--tray`) on OS login.
     #[serde(default)]
     pub run_on_startup: bool,
+    /// Global automatic backup retention policy (disabled by default for upgrade safety).
+    #[serde(default)]
+    pub retention: RetentionPolicy,
+    /// Frequency at which automatic retention cleanup runs via `ScheduleRunner`.
+    #[serde(default)]
+    pub cleanup_frequency: CleanupFrequency,
+    /// Timestamp of the last completed global retention cleanup (`YYYY-MM-DD HH:MM:SS`).
+    #[serde(default)]
+    pub last_cleanup: Option<String>,
 }
 
 /// Root persisted state matching ChronoBase v1's `chronobase-data.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoreData {
-    /// Schema version (`1` for v1 files without this field, `3` for current).
+    /// Schema version (`1` for v1 files without this field, `4` for current).
     #[serde(default = "default_v1_schema_version")]
     pub schema_version: u32,
     /// Saved database connections.

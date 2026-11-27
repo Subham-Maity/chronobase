@@ -25,6 +25,7 @@ use chronobase_core::bridge::{
 };
 use chronobase_core::connection::{CreateConnectionInput, DbKind, UpdateConnectionInput};
 use chronobase_core::constant::ALL_GROUPS;
+use chronobase_core::retention::{CleanupFrequency, RetentionPolicy};
 use chronobase_core::schedule::CreateScheduleInput;
 use chronobase_core::secret::Secret;
 use chronobase_core::system::DashboardStats;
@@ -64,6 +65,7 @@ enum PendingConfirm {
     DeleteBackup(u64),
     DeleteSchedule(u64),
     DeleteVpsPeer(u64),
+    RunRetention,
 }
 
 /// Formats a byte count into human-readable units (`0 B`, `1.4 KB`, `3.2 MB`, `1.1 GB`).
@@ -189,6 +191,14 @@ pub fn run_gui(state: Arc<AppState>, start_in_tray: bool) -> ExitCode {
     let tray_weak = tray.as_ref().map(|t| t.as_weak());
     wire_callbacks(&window, &state, &rt, &filters, tray_weak);
     rt.send(AppCommand::RefreshAll);
+    if settings.retention.enabled
+        && state
+            .retention_service
+            .preview()
+            .is_ok_and(|p| !p.to_delete.is_empty())
+    {
+        rt.send(AppCommand::RunRetentionNow);
+    }
 
     if !start_in_tray && let Err(err) = window.show() {
         tracing::error!(error = %err, "Failed to show main window");
@@ -363,6 +373,9 @@ fn wire_callbacks(
                 w.set_conn_form_type("postgres".into());
                 w.set_conn_form_url("".into());
                 w.set_conn_form_notes("".into());
+                w.set_conn_form_ret_custom(false);
+                w.set_conn_form_ret_keep_last("".into());
+                w.set_conn_form_ret_max_age("".into());
                 w.set_conn_modal_open(true);
             }
         });
@@ -382,41 +395,97 @@ fn wire_callbacks(
                 w.set_conn_form_type(conn.db_type.as_str().into());
                 w.set_conn_form_url(conn.url.expose().into());
                 w.set_conn_form_notes(conn.notes.into());
+                if let Some(ret) = conn.retention {
+                    w.set_conn_form_ret_custom(true);
+                    w.set_conn_form_ret_keep_last(
+                        ret.keep_last
+                            .map(|v| v.to_string())
+                            .unwrap_or_default()
+                            .into(),
+                    );
+                    w.set_conn_form_ret_max_age(
+                        ret.max_age_days
+                            .map(|v| v.to_string())
+                            .unwrap_or_default()
+                            .into(),
+                    );
+                } else {
+                    w.set_conn_form_ret_custom(false);
+                    w.set_conn_form_ret_keep_last("".into());
+                    w.set_conn_form_ret_max_age("".into());
+                }
                 w.set_conn_modal_open(true);
             }
         });
     }
     {
         let rt = Rc::clone(rt);
-        window.on_save_connection(move |edit_id, name, group, db_type, url, notes| {
-            let kind = if db_type == "mongodb" {
-                DbKind::Mongodb
-            } else {
-                DbKind::Postgres
-            };
-            if edit_id < 0 {
-                rt.send(AppCommand::CreateConnection {
-                    input: CreateConnectionInput {
-                        name: name.into(),
-                        group_name: group.into(),
-                        db_type: kind,
-                        url: Secret::new(url.to_string()),
-                        notes: notes.into(),
-                    },
-                });
-            } else {
-                rt.send(AppCommand::UpdateConnection {
-                    id: edit_id as u64,
-                    input: UpdateConnectionInput {
-                        name: name.into(),
-                        group_name: group.into(),
-                        db_type: kind,
-                        url: Secret::new(url.to_string()),
-                        notes: notes.into(),
-                    },
-                });
-            }
-        });
+        let weak = window.as_weak();
+        window.on_save_connection(
+            move |edit_id,
+                  name,
+                  group,
+                  db_type,
+                  url,
+                  notes,
+                  ret_custom,
+                  ret_keep_last,
+                  ret_max_age| {
+                let kind = if db_type == "mongodb" {
+                    DbKind::Mongodb
+                } else {
+                    DbKind::Postgres
+                };
+                let retention = if ret_custom {
+                    let keep_last = match parse_opt_u32(&ret_keep_last) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            show_toast(&weak, e, ToastKind::Error);
+                            return;
+                        }
+                    };
+                    let max_age_days = match parse_opt_u32(&ret_max_age) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            show_toast(&weak, e, ToastKind::Error);
+                            return;
+                        }
+                    };
+                    Some(RetentionPolicy {
+                        enabled: true,
+                        keep_last,
+                        max_age_days,
+                        failed_max_age_days: Some(7),
+                    })
+                } else {
+                    None
+                };
+                if edit_id < 0 {
+                    rt.send(AppCommand::CreateConnection {
+                        input: CreateConnectionInput {
+                            name: name.into(),
+                            group_name: group.into(),
+                            db_type: kind,
+                            url: Secret::new(url.to_string()),
+                            notes: notes.into(),
+                            retention,
+                        },
+                    });
+                } else {
+                    rt.send(AppCommand::UpdateConnection {
+                        id: edit_id as u64,
+                        input: UpdateConnectionInput {
+                            name: name.into(),
+                            group_name: group.into(),
+                            db_type: kind,
+                            url: Secret::new(url.to_string()),
+                            notes: notes.into(),
+                            retention,
+                        },
+                    });
+                }
+            },
+        );
     }
     {
         let st = Arc::clone(state);
@@ -763,6 +832,52 @@ fn wire_callbacks(
             }
         });
     }
+    {
+        let rt = Rc::clone(rt);
+        let weak = window.as_weak();
+        window.on_save_retention(
+            move |enabled, kl, ma, fa, fk, cc| match build_retention_from_ui(
+                enabled, &kl, &ma, &fa, &fk, &cc,
+            ) {
+                Ok((policy, frequency)) => {
+                    rt.send(AppCommand::UpdateRetentionPolicy { policy, frequency });
+                }
+                Err(msg) => show_toast(&weak, msg, ToastKind::Error),
+            },
+        );
+    }
+    {
+        let rt = Rc::clone(rt);
+        let weak = window.as_weak();
+        window.on_preview_retention(
+            move |enabled, kl, ma, fa, fk, cc| match build_retention_from_ui(
+                enabled, &kl, &ma, &fa, &fk, &cc,
+            ) {
+                Ok((policy, frequency)) => {
+                    rt.send(AppCommand::UpdateRetentionPolicy { policy, frequency });
+                    rt.send(AppCommand::PreviewRetention);
+                }
+                Err(msg) => show_toast(&weak, msg, ToastKind::Error),
+            },
+        );
+    }
+    {
+        let weak = window.as_weak();
+        let pending = Rc::clone(&pending_confirm);
+        window.on_request_run_retention(move || {
+            *pending.borrow_mut() = Some(PendingConfirm::RunRetention);
+            if let Some(w) = weak.upgrade() {
+                w.set_confirm_title("Run retention cleanup now?".into());
+                w.set_confirm_body(
+                    "Deletes snapshots exceeding your retention rules (the newest good backup per database is always kept)."
+                        .into(),
+                );
+                w.set_confirm_label("Run cleanup".into());
+                w.set_confirm_destructive(true);
+                w.set_confirm_open(true);
+            }
+        });
+    }
 
     // Setup
     {
@@ -797,6 +912,7 @@ fn wire_callbacks(
     // Generic confirm resolution
     {
         let rt = Rc::clone(rt);
+        let weak = window.as_weak();
         let pending = Rc::clone(&pending_confirm);
         window.on_confirm_accepted(move || {
             if let Some(action) = pending.borrow_mut().take() {
@@ -815,6 +931,12 @@ fn wire_callbacks(
                     }
                     PendingConfirm::DeleteVpsPeer(id) => {
                         rt.send(AppCommand::DeleteVpsPeer { id });
+                    }
+                    PendingConfirm::RunRetention => {
+                        if let Some(w) = weak.upgrade() {
+                            w.set_retention_busy(true);
+                        }
+                        rt.send(AppCommand::RunRetentionNow);
                     }
                 }
             }
@@ -1259,6 +1381,24 @@ async fn handle_command(
                         .filter(|r| r.entry.status == BackupStatus::Success)
                         .count();
                     let fail = results.len().saturating_sub(ok);
+                    let mut seen = std::collections::HashSet::new();
+                    for r in results
+                        .iter()
+                        .filter(|r| r.entry.status == BackupStatus::Success)
+                    {
+                        if seen.insert(r.connection_id)
+                            && let Err(err) = state
+                                .retention_service
+                                .run_for_connection(r.connection_id)
+                                .await
+                        {
+                            tracing::error!(
+                                connection_id = r.connection_id,
+                                error = %err,
+                                "post-backup retention failed"
+                            );
+                        }
+                    }
                     let msg = format!(
                         "Done: {ok} success{}",
                         if fail > 0 {
@@ -1291,6 +1431,17 @@ async fn handle_command(
         AppCommand::BackupConnection { connection_id } => {
             match state.backup_service.backup_connection(connection_id).await {
                 Ok(res) if res.entry.status == BackupStatus::Success => {
+                    if let Err(err) = state
+                        .retention_service
+                        .run_for_connection(connection_id)
+                        .await
+                    {
+                        tracing::error!(
+                            connection_id,
+                            error = %err,
+                            "post-backup retention failed"
+                        );
+                    }
                     show_toast(weak, "Backup saved".to_string(), ToastKind::Success);
                 }
                 Ok(res) => {
@@ -1455,6 +1606,9 @@ async fn handle_command(
         AppCommand::PullFromVps { peer_id } => {
             match state.bridge_service.pull_from_vps(peer_id).await {
                 Ok(res) => {
+                    if let Err(err) = state.retention_service.run_for_connection(peer_id).await {
+                        tracing::error!(peer_id, error = %err, "post-pull retention failed");
+                    }
                     let msg = format!(
                         "Pulled {} ({}){}",
                         res.peer_name,
@@ -1557,6 +1711,75 @@ async fn handle_command(
                 }
             }
         }
+        AppCommand::UpdateRetentionPolicy { policy, frequency } => {
+            match state.settings_service.update_retention(policy, frequency) {
+                Ok(_) => {
+                    show_toast(
+                        weak,
+                        "Retention policy saved".to_string(),
+                        ToastKind::Success,
+                    );
+                    refresh_all_views(&state, weak, filters).await;
+                }
+                Err(err) => show_toast(weak, err.to_string(), ToastKind::Error),
+            }
+        }
+        AppCommand::PreviewRetention => match state.retention_service.preview() {
+            Ok(plan) => {
+                let text = format!(
+                    "{} snapshot(s), {} will be deleted",
+                    plan.to_delete.len(),
+                    fmt_size(plan.bytes_freed)
+                );
+                let weak_c = weak.clone();
+                let text_c = text.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = weak_c.upgrade() {
+                        w.set_retention_preview_text(text_c.into());
+                    }
+                });
+                show_toast(weak, text, ToastKind::Info);
+            }
+            Err(err) => show_toast(weak, err.to_string(), ToastKind::Error),
+        },
+        AppCommand::RunRetentionNow => {
+            match state.retention_service.run().await {
+                Ok(report) => {
+                    let msg = if report.errors.is_empty() {
+                        format!(
+                            "Cleaned {} snapshot(s), freed {}",
+                            report.deleted_count,
+                            fmt_size(report.bytes_freed)
+                        )
+                    } else {
+                        format!(
+                            "Cleaned {} snapshot(s) with {} error(s): {}",
+                            report.deleted_count,
+                            report.errors.len(),
+                            report.errors[0]
+                        )
+                    };
+                    show_toast(
+                        weak,
+                        msg,
+                        if report.errors.is_empty() {
+                            ToastKind::Success
+                        } else {
+                            ToastKind::Error
+                        },
+                    );
+                }
+                Err(err) => show_toast(weak, err.to_string(), ToastKind::Error),
+            }
+            let weak_c = weak.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = weak_c.upgrade() {
+                    w.set_retention_busy(false);
+                    w.set_retention_preview_text("".into());
+                }
+            });
+            refresh_all_views(&state, weak, filters).await;
+        }
         AppCommand::ResetEverything { confirm } => {
             match state.danger_service.reset_everything(&confirm) {
                 Ok(()) => {
@@ -1600,6 +1823,14 @@ fn page_guide_content(
             "Click Restore on any healthy snapshot to overwrite its source DB or clone into a different URL.",
             "Failed runs record diagnostic tool output so you can spot wrong credentials or missing binaries quickly.",
             "All backup files remain portable plain dumps inside your ChronoBase backups/ folder.",
+        ),
+        "retention" => (
+            "Automatic Retention Guide",
+            "Automatically prune old snapshots while always protecting your newest good backup per database.",
+            "Keep-last and max-age are both limits: a snapshot is pruned if it exceeds either limit.",
+            "The newest healthy snapshot in each (connection, source) group is NEVER deleted, regardless of age.",
+            "Snapshots created within the last hour and unparseable timestamps are always kept.",
+            "Use Preview to inspect exact counts and bytes before enabling scheduled cleanup or running `chronobase cleanup`.",
         ),
         "schedules" => (
             "Schedules Guide",
@@ -1698,7 +1929,7 @@ async fn refresh_all_views(
     }
 
     if let Ok(scheds) = state.schedule_service.list() {
-        schedules::push_schedules(weak, scheds);
+        schedules::push_schedules(weak, scheds, &settings);
     }
 
     bridge::push_vps_peers(weak, all_peers, &all_conns);
@@ -1727,4 +1958,38 @@ fn next_type_option(current: Option<DbKind>) -> Option<DbKind> {
         Some(DbKind::Postgres) => Some(DbKind::Mongodb),
         Some(DbKind::Mongodb) => None,
     }
+}
+
+fn parse_opt_u32(raw: &str) -> Result<Option<u32>, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    trimmed
+        .parse::<u32>()
+        .map(Some)
+        .map_err(|_| format!("Invalid positive integer '{trimmed}'"))
+}
+
+fn build_retention_from_ui(
+    enabled: bool,
+    keep_last: &str,
+    max_age: &str,
+    failed_age: &str,
+    freq_kind: &str,
+    custom_cron: &str,
+) -> Result<(RetentionPolicy, CleanupFrequency), String> {
+    let policy = RetentionPolicy {
+        enabled,
+        keep_last: parse_opt_u32(keep_last)?,
+        max_age_days: parse_opt_u32(max_age)?,
+        failed_max_age_days: parse_opt_u32(failed_age)?,
+    };
+    let frequency = match freq_kind {
+        "weekly" => CleanupFrequency::Weekly,
+        "monthly" => CleanupFrequency::Monthly,
+        "custom" => CleanupFrequency::Custom(custom_cron.trim().to_string()),
+        _ => CleanupFrequency::Daily,
+    };
+    Ok((policy, frequency))
 }

@@ -72,8 +72,21 @@ export component MainWindow inherits Window {
     in property <string> bk-status-filter-label: "All Status";
     in-out property <bool> bk-grouped-by-date: true;
 
-    // Schedules
+    // Schedules & Retention
     in property <[ScheduleRow]> schedule-rows: [];
+    in-out property <bool> retention-enabled: false;
+    in-out property <string> retention-keep-last: "";
+    in-out property <string> retention-max-age: "";
+    in-out property <string> retention-failed-age: "7";
+    in-out property <string> retention-freq-kind: "daily";
+    in-out property <string> retention-custom-cron: "0 3 * * *";
+    in property <string> retention-preview-text: "";
+    in property <bool> retention-busy: false;
+
+    // Connection retention override modal fields
+    in-out property <bool> conn-form-ret-custom: false;
+    in-out property <string> conn-form-ret-keep-last: "";
+    in-out property <string> conn-form-ret-max-age: "";
 
     // VPS & Migrate
     in property <[VpsPeerRow]> vps-rows: [];
@@ -169,7 +182,7 @@ export component MainWindow inherits Window {
     callback backup-one-entry(string, int);
     callback open-add-connection();
     callback edit-one-entry(string, int);
-    callback save-connection(int, string, string, string, string, string);
+    callback save-connection(int, string, string, string, string, string, bool, string, string);
     callback request-wipe-connection(int);
     callback delete-one-entry(string, int);
 
@@ -187,6 +200,9 @@ export component MainWindow inherits Window {
     callback save-schedule(string, string, string);
     callback toggle-schedule(int);
     callback request-delete-schedule(int);
+    callback save-retention(bool, string, string, string, string, string);
+    callback preview-retention(bool, string, string, string, string, string);
+    callback request-run-retention();
 
     callback recheck-tools();
 
@@ -564,10 +580,22 @@ export component MainWindow inherits Window {
 
             if active-page == "schedules": SchedulesPage {
                 rows: root.schedule-rows;
+                retention-enabled <=> root.retention-enabled;
+                retention-keep-last <=> root.retention-keep-last;
+                retention-max-age <=> root.retention-max-age;
+                retention-failed-age <=> root.retention-failed-age;
+                retention-freq-kind <=> root.retention-freq-kind;
+                retention-custom-cron <=> root.retention-custom-cron;
+                retention-preview-text: root.retention-preview-text;
+                retention-busy: root.retention-busy;
                 open-guide => { root.open-page-guide("schedules"); }
+                open-retention-guide => { root.open-page-guide("retention"); }
                 add-schedule => { root.open-add-schedule(); }
                 toggle-schedule(id) => { root.toggle-schedule(id); }
                 delete-schedule(id) => { root.request-delete-schedule(id); }
+                save-retention(en, kl, ma, fa, fk, cc) => { root.save-retention(en, kl, ma, fa, fk, cc); }
+                preview-retention(en, kl, ma, fa, fk, cc) => { root.preview-retention(en, kl, ma, fa, fk, cc); }
+                run-retention-now => { root.request-run-retention(); }
             }
 
             if active-page == "setup": SetupPage {
@@ -677,6 +705,49 @@ export component MainWindow inherits Window {
                 placeholder: "Any notes about this database...";
             }
 
+            VerticalLayout {
+                spacing: 6px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    Text {
+                        text: "Retention";
+                        font-family: Palette.font-ui;
+                        font-size: Type.secondary;
+                        font-weight: 500;
+                        color: Palette.ink-2;
+                        vertical-alignment: center;
+                    }
+                    Chip {
+                        text: "Use global";
+                        selected: !conn-form-ret-custom;
+                        clicked => { conn-form-ret-custom = false; }
+                    }
+                    Chip {
+                        text: "Custom";
+                        selected: conn-form-ret-custom;
+                        clicked => { conn-form-ret-custom = true; }
+                    }
+                }
+                if conn-form-ret-custom: HorizontalLayout {
+                    spacing: 12px;
+                    FormField {
+                        horizontal-stretch: 1;
+                        label: "Keep last";
+                        value <=> conn-form-ret-keep-last;
+                        mono: true;
+                        placeholder: "e.g. 14";
+                    }
+                    FormField {
+                        horizontal-stretch: 1;
+                        label: "Max age (days)";
+                        value <=> conn-form-ret-max-age;
+                        mono: true;
+                        placeholder: "e.g. 30";
+                    }
+                }
+            }
+
             Rectangle { height: 1px; background: Palette.line; }
 
             HorizontalLayout {
@@ -695,7 +766,10 @@ export component MainWindow inherits Window {
                             conn-form-group,
                             conn-form-type,
                             conn-form-url,
-                            conn-form-notes
+                            conn-form-notes,
+                            conn-form-ret-custom,
+                            conn-form-ret-keep-last,
+                            conn-form-ret-max-age
                         );
                     }
                 }

@@ -106,6 +106,7 @@ impl ConnectionRepository for StoreConnectionRepository {
                 url: input.url,
                 notes: input.notes.trim().to_string(),
                 created_at: local_timestamp(),
+                retention: input.retention,
             };
             d.connections.push(conn.clone());
             conn
@@ -129,6 +130,7 @@ impl ConnectionRepository for StoreConnectionRepository {
             existing.db_type = input.db_type;
             existing.url = input.url;
             existing.notes = input.notes.trim().to_string();
+            existing.retention = input.retention;
             Some(existing.clone())
         });
 

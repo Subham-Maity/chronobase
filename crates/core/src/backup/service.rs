@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use chrono::Local;
+use tokio::sync::Mutex;
 
 use crate::backup::engine::{
     CommandRunner, CommandSpec, TempSecretFile, build_mongodump_spec, build_mongorestore_spec,
@@ -73,6 +74,7 @@ pub struct DefaultBackupService {
     backup_repo: Arc<dyn BackupRepository>,
     tools: Arc<dyn ToolDiscovery>,
     runner: Arc<dyn CommandRunner>,
+    snapshot_op_lock: Arc<Mutex<()>>,
 }
 
 impl DefaultBackupService {
@@ -90,7 +92,14 @@ impl DefaultBackupService {
             backup_repo,
             tools,
             runner,
+            snapshot_op_lock: Arc::new(Mutex::new(())),
         }
+    }
+
+    /// Shares an external [`Mutex`] to serialize snapshot restore/migration with retention cleanup.
+    pub fn with_snapshot_lock(mut self, snapshot_op_lock: Arc<Mutex<()>>) -> Self {
+        self.snapshot_op_lock = snapshot_op_lock;
+        self
     }
 
     async fn run_backup_for_conn(&self, conn: &Connection) -> BackupRunResult {
@@ -300,6 +309,7 @@ impl BackupService for DefaultBackupService {
         target: RestoreTarget,
     ) -> Pin<Box<dyn Future<Output = Result<(), BackupError>> + Send + '_>> {
         Box::pin(async move {
+            let _op_guard = self.snapshot_op_lock.lock().await;
             let entry = self
                 .backup_repo
                 .find_by_id(backup_id)?
@@ -616,6 +626,7 @@ mod tests {
                 db_type: DbKind::Postgres,
                 url: Secret::new("postgresql://u:secretpw@localhost:5432/db"),
                 notes: "".into(),
+                retention: None,
             })
             .expect("conn");
 

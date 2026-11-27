@@ -59,7 +59,7 @@ The original [ChronoBase v1 (`d695de05d8e5966a39b9e0b37e612e182ab9eb48`)](https:
 | <img src="assets/icons/layers.svg" width="16" height="16" align="absmiddle" alt="" /> **Strata Stone-Glass Native UI** | Built with **Slint 1.19** (`Geist` & `Geist Mono`), expandable **Dashboard Breakdown**, virtualized `Group · Date` history with **Folder Reveal**, and per-tab **`(i)` Setup Guides**. |
 | <img src="assets/icons/shield.svg" width="16" height="16" align="absmiddle" alt="" /> **Hardened Against Leaks & Traversal** | Passwords never enter `argv` or logs; snapshot deletion & reveal check canonicalized paths; VPS transfers use mutual HMAC-SHA256 + `ChaCha20-Poly1305` + SHA-256 checksums. |
 | <img src="assets/icons/database.svg" width="16" height="16" align="absmiddle" alt="" /> **Unified Connections, VPS Pull & Migration** | Group Direct DBs & VPS Peers together so cron runs both; migrate **`VPS -> Local DB`** or **`DB -> DB`** in one click with engine & PostgreSQL major-version preflight checks. |
-| <img src="assets/icons/clock.svg" width="16" height="16" align="absmiddle" alt="" /> **Background Tray & OS Startup Cron** | Toggle **Run in background** & **Run on OS startup** (`--tray`) from the sidebar to keep ChronoBase in your system tray while 5-field cron jobs run unattended. |
+| <img src="assets/icons/clock.svg" width="16" height="16" align="absmiddle" alt="" /> **Background Tray, Retention & Cron** | Toggle **Run in background** & **Run on OS startup** (`--tray`) from the sidebar, schedule 5-field cron jobs, and enable **Automatic Retention** (always keeping your newest good backup; deletions are strictly confined to `backups/` via canonicalized paths). |
 | <img src="assets/icons/database.svg" width="16" height="16" align="absmiddle" alt="" /> **Drop-In `v1` Migration** | Existing [ChronoBase v1 (`d695de05`)](https://github.com/Subham-Maity/chronobase/tree/d695de05d8e5966a39b9e0b37e612e182ab9eb48) `chronobase-data.json` files load directly and re-base stale paths. |
 | <img src="assets/icons/terminal.svg" width="16" height="16" align="absmiddle" alt="" /> **GUI, Headless, Agent & CLI** | Run the desktop app interactively, `--headless` scheduler daemon, `--agent` VPS listener, or scriptable `backup`, `list`, `pull` commands. |
 
@@ -232,6 +232,7 @@ chronobase [OPTIONS] [COMMAND]
 COMMANDS:
   backup --all             Run backups for all connections (exit 0 if all succeed, 1 on any failure)
   backup --group <name>    Run backups for a specific group
+  cleanup [--dry-run]      Run backup retention cleanup (or preview without deleting)
   list                     List connections (masked URLs), schedules, and recent backups
   agent-init               Generate 256-bit VPS pairing key and chronobase-agent.json (0600)
   pull <vps-name-or-id>    Pull a verified encrypted snapshot from a configured VPS peer
@@ -318,13 +319,14 @@ Enable and start: `systemctl --user enable --now chronobase`.
 
 ```text
 <data_dir>/
-├── chronobase-data.json              ← connections, backup history (500-entry failed-first cap), schedules, vps_peers, _seq
+├── chronobase-data.json              ← connections, backup history (500-entry failed-first cap), schedules, vps_peers, settings (tray/startup/retention), _seq
 ├── chronobase-agent.json             ← 0600 VPS pairing config (generated via `chronobase agent-init`)
 ├── chronobase.lock                   ← advisory fs4 lock preventing concurrent store corruption
 └── backups/
     └── <GroupSlug>/
-        ├── MyApp_20261127_020001.sql ← PostgreSQL dump (--clean --if-exists --no-owner)
-        └── Analytics_20261127_020015/← MongoDB BSON dump folder
+        └── <YYYY-MM-DD>/
+            ├── MyApp_20261127_020001.sql ← PostgreSQL dump (--clean --if-exists --no-owner)
+            └── Analytics_20261127_020015/← MongoDB BSON dump folder
 ```
 
 ### Repository Structure
