@@ -57,6 +57,7 @@ export component DashboardPage inherits VerticalLayout {
                 spacing: 4px;
 
                 HorizontalLayout {
+                    alignment: start;
                     spacing: Space.s8;
                     Text {
                         text: status-sentence;
@@ -64,9 +65,12 @@ export component DashboardPage inherits VerticalLayout {
                         font-size: Type.title;
                         font-weight: 600;
                         color: last-failed ? Palette.bad : Palette.ink-1;
+                        horizontal-stretch: 0;
                         overflow: elide;
                     }
                     VerticalLayout {
+                        width: 32px;
+                        horizontal-stretch: 0;
                         alignment: center;
                         PageInfoButton {
                             clicked => { root.open-guide(); }

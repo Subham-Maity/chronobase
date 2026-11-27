@@ -450,6 +450,7 @@ export component MainWindow inherits Window {
 
         VerticalLayout {
             spacing: 14px;
+            alignment: start;
 
             Text {
                 text: conn-edit-id < 0 ? "Add connection" : "Edit connection";
@@ -492,6 +493,7 @@ export component MainWindow inherits Window {
                 }
                 HorizontalLayout {
                     spacing: 8px;
+                    alignment: start;
                     Chip {
                         text: "PostgreSQL";
                         selected: conn-form-type == "postgres";
@@ -557,6 +559,7 @@ export component MainWindow inherits Window {
 
         VerticalLayout {
             spacing: 14px;
+            alignment: start;
 
             Text {
                 text: "New schedule";
@@ -636,6 +639,7 @@ export component MainWindow inherits Window {
 
         VerticalLayout {
             spacing: 14px;
+            alignment: start;
 
             Text {
                 text: "Restore snapshot";
@@ -653,11 +657,14 @@ export component MainWindow inherits Window {
 
             // Info grid
             Rectangle {
+                height: restore-info-grid.preferred-height;
+                vertical-stretch: 0;
                 border-radius: Palette.r-md;
                 background: Palette.tier-base;
                 border-width: 1px;
                 border-color: Palette.line;
-                VerticalLayout {
+                restore-info-grid := VerticalLayout {
+                    width: parent.width;
                     padding: 12px;
                     spacing: 6px;
                     HorizontalLayout {
@@ -732,12 +739,16 @@ export component MainWindow inherits Window {
 
             if restore-mode == "same": VerticalLayout {
                 spacing: 12px;
+                alignment: start;
                 Rectangle {
+                    height: restore-same-warn.preferred-height;
+                    vertical-stretch: 0;
                     border-radius: Palette.r-md;
                     background: Palette.bad-dim;
                     border-width: 1px;
                     border-color: Palette.bad-border;
-                    VerticalLayout {
+                    restore-same-warn := VerticalLayout {
+                        width: parent.width;
                         padding: 12px;
                         spacing: 3px;
                         Text {
@@ -766,12 +777,16 @@ export component MainWindow inherits Window {
 
             if restore-mode == "other": VerticalLayout {
                 spacing: 12px;
+                alignment: start;
                 Rectangle {
+                    height: restore-other-warn.preferred-height;
+                    vertical-stretch: 0;
                     border-radius: Palette.r-md;
                     background: Palette.signal-dim;
                     border-width: 1px;
                     border-color: Palette.line-strong;
-                    VerticalLayout {
+                    restore-other-warn := VerticalLayout {
+                        width: parent.width;
                         padding: 12px;
                         spacing: 3px;
                         Text {
@@ -833,6 +848,7 @@ export component MainWindow inherits Window {
 
         VerticalLayout {
             spacing: 14px;
+            alignment: start;
             Text {
                 text: "Delete all backup files";
                 font-family: Palette.font-ui;
@@ -875,6 +891,7 @@ export component MainWindow inherits Window {
 
         VerticalLayout {
             spacing: 14px;
+            alignment: start;
             Text {
                 text: "Reset everything";
                 font-family: Palette.font-ui;
@@ -916,7 +933,8 @@ export component MainWindow inherits Window {
         backdrop-clicked => { vps-modal-open = false; }
 
         VerticalLayout {
-            spacing: 10px;
+            spacing: 8px;
+            alignment: start;
 
             Text {
                 text: vps-edit-id < 0 ? "Add VPS peer" : "Edit VPS peer";
@@ -943,28 +961,26 @@ export component MainWindow inherits Window {
                 }
             }
 
-            VerticalLayout {
-                spacing: 6px;
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: start;
                 Text {
-                    text: "Remote database engine";
+                    text: "Engine";
                     font-family: Palette.font-ui;
                     font-size: Type.secondary;
                     font-weight: 500;
                     color: Palette.ink-2;
+                    vertical-alignment: center;
                 }
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: start;
-                    Chip {
-                        text: "PostgreSQL";
-                        selected: vps-form-type == "postgres";
-                        clicked => { vps-form-type = "postgres"; }
-                    }
-                    Chip {
-                        text: "MongoDB";
-                        selected: vps-form-type == "mongodb";
-                        clicked => { vps-form-type = "mongodb"; }
-                    }
+                Chip {
+                    text: "PostgreSQL";
+                    selected: vps-form-type == "postgres";
+                    clicked => { vps-form-type = "postgres"; }
+                }
+                Chip {
+                    text: "MongoDB";
+                    selected: vps-form-type == "mongodb";
+                    clicked => { vps-form-type = "mongodb"; }
                 }
             }
 
@@ -988,6 +1004,7 @@ export component MainWindow inherits Window {
                     edited(txt) => { root.preview-vps-fingerprint(txt); }
                 }
                 VerticalLayout {
+                    horizontal-stretch: 0;
                     alignment: end;
                     GhostButton {
                         text: "Generate";
@@ -999,6 +1016,7 @@ export component MainWindow inherits Window {
 
             Rectangle {
                 height: 30px;
+                vertical-stretch: 0;
                 border-radius: Palette.r-sm;
                 background: Palette.tier-base;
                 border-width: 1px;
@@ -1040,11 +1058,14 @@ export component MainWindow inherits Window {
             }
 
             Rectangle {
+                height: vps-hint-box.preferred-height;
+                vertical-stretch: 0;
                 border-radius: Palette.r-sm;
                 background: Palette.signal-dim;
                 border-width: 1px;
                 border-color: Palette.line-strong;
-                VerticalLayout {
+                vps-hint-box := VerticalLayout {
+                    width: parent.width;
                     padding: 8px;
                     Text {
                         text: "VPS setup: `chronobase agent-init` then `chronobase --agent --bind 0.0.0.0:9443`. Staging dumps delete automatically after transfer.";
@@ -1088,6 +1109,7 @@ export component MainWindow inherits Window {
 
         VerticalLayout {
             spacing: 14px;
+            alignment: start;
 
             Text {
                 text: "One-click DB migration";
@@ -1135,11 +1157,14 @@ export component MainWindow inherits Window {
             }
 
             Rectangle {
+                height: migrate-warn-box.preferred-height;
+                vertical-stretch: 0;
                 border-radius: Palette.r-md;
                 background: Palette.warn-dim;
                 border-width: 1px;
                 border-color: Palette.warn-border;
-                VerticalLayout {
+                migrate-warn-box := VerticalLayout {
+                    width: parent.width;
                     padding: 12px;
                     Text {
                         text: "Both connections must share the same engine (PostgreSQL -> PostgreSQL or MongoDB -> MongoDB). Destination data is replaced.";
@@ -1209,10 +1234,12 @@ export component MainWindow inherits Window {
     }
 
     // ── Toast Stack (bottom-right) ──
-    VerticalLayout {
+    if toasts.length > 0: VerticalLayout {
         x: parent.width - 364px;
-        y: parent.height - 24px - self.preferred-height;
+        y: 0px;
         width: 340px;
+        height: parent.height - 20px;
+        alignment: end;
         spacing: 8px;
 
         for t in toasts: ToastBanner {

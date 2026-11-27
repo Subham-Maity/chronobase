@@ -2,13 +2,58 @@
 
 import { Palette, Type, Space } from "../theme.slint";
 import { Icons, Icon } from "../icons.slint";
-import { GhostButton, PrimaryButton } from "./buttons.slint";
+import { PrimaryButton } from "./buttons.slint";
 import { ModalOverlay } from "./modal.slint";
 
-export component PageInfoButton inherits GhostButton {
-    icon-path: Icons.info;
-    small: true;
-    a11y-label: "Page guide & setup steps";
+export component PageInfoButton inherits Rectangle {
+    in property <string> a11y-label: "Page guide & setup steps";
+    callback clicked();
+
+    width: 32px;
+    height: 32px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: 16px;
+    background: touch.pressed ? Palette.stone-800
+        : touch.has-hover ? Palette.tier-hover
+        : Palette.tier-raised;
+    border-width: 1px;
+    border-color: touch.has-hover ? Palette.line-strong : Palette.line;
+    accessible-role: AccessibleRole.button;
+    accessible-label: a11y-label;
+
+    if focus.has-focus: Rectangle {
+        x: -3px;
+        y: -3px;
+        width: parent.width + 6px;
+        height: parent.height + 6px;
+        border-radius: 19px;
+        border-width: 2px;
+        border-color: Palette.signal;
+    }
+
+    Icon {
+        x: 9px;
+        y: 9px;
+        svg-path: Icons.info;
+        size: 14px;
+        tint: touch.has-hover ? Palette.ink-1 : Palette.ink-2;
+    }
+
+    focus := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == " ") {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
 }
 
 export component PageGuideModal inherits ModalOverlay {
@@ -25,12 +70,16 @@ export component PageGuideModal inherits ModalOverlay {
 
     VerticalLayout {
         spacing: Space.s16;
+        alignment: start;
 
         HorizontalLayout {
             spacing: Space.s12;
+            alignment: start;
             Rectangle {
                 width: 38px;
                 height: 38px;
+                horizontal-stretch: 0;
+                vertical-stretch: 0;
                 border-radius: Palette.r-md;
                 background: Palette.signal-dim;
                 border-width: 1px;
@@ -64,11 +113,14 @@ export component PageGuideModal inherits ModalOverlay {
         }
 
         Rectangle {
+            height: purpose-box.preferred-height;
+            vertical-stretch: 0;
             border-radius: Palette.r-md;
             background: Palette.tier-base;
             border-width: 1px;
             border-color: Palette.line;
-            VerticalLayout {
+            purpose-box := VerticalLayout {
+                width: parent.width;
                 padding: Space.s12;
                 Text {
                     text: guide-purpose;
@@ -84,21 +136,26 @@ export component PageGuideModal inherits ModalOverlay {
             spacing: Space.s8;
             if step-1 != "": HorizontalLayout {
                 spacing: Space.s12;
-                Rectangle {
-                    width: 22px;
-                    height: 22px;
-                    border-radius: 11px;
-                    background: Palette.signal-dim;
-                    border-width: 1px;
-                    border-color: Palette.line-strong;
-                    Text {
-                        text: "1";
-                        font-family: Palette.font-mono;
-                        font-size: Type.min-label;
-                        font-weight: 600;
-                        color: Palette.signal;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                VerticalLayout {
+                    horizontal-stretch: 0;
+                    alignment: start;
+                    padding-top: 1px;
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        border-radius: 11px;
+                        background: Palette.signal-dim;
+                        border-width: 1px;
+                        border-color: Palette.line-strong;
+                        Text {
+                            text: "1";
+                            font-family: Palette.font-mono;
+                            font-size: Type.min-label;
+                            font-weight: 600;
+                            color: Palette.signal;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
                     }
                 }
                 VerticalLayout {
@@ -116,21 +173,26 @@ export component PageGuideModal inherits ModalOverlay {
 
             if step-2 != "": HorizontalLayout {
                 spacing: Space.s12;
-                Rectangle {
-                    width: 22px;
-                    height: 22px;
-                    border-radius: 11px;
-                    background: Palette.signal-dim;
-                    border-width: 1px;
-                    border-color: Palette.line-strong;
-                    Text {
-                        text: "2";
-                        font-family: Palette.font-mono;
-                        font-size: Type.min-label;
-                        font-weight: 600;
-                        color: Palette.signal;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                VerticalLayout {
+                    horizontal-stretch: 0;
+                    alignment: start;
+                    padding-top: 1px;
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        border-radius: 11px;
+                        background: Palette.signal-dim;
+                        border-width: 1px;
+                        border-color: Palette.line-strong;
+                        Text {
+                            text: "2";
+                            font-family: Palette.font-mono;
+                            font-size: Type.min-label;
+                            font-weight: 600;
+                            color: Palette.signal;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
                     }
                 }
                 VerticalLayout {
@@ -148,21 +210,26 @@ export component PageGuideModal inherits ModalOverlay {
 
             if step-3 != "": HorizontalLayout {
                 spacing: Space.s12;
-                Rectangle {
-                    width: 22px;
-                    height: 22px;
-                    border-radius: 11px;
-                    background: Palette.signal-dim;
-                    border-width: 1px;
-                    border-color: Palette.line-strong;
-                    Text {
-                        text: "3";
-                        font-family: Palette.font-mono;
-                        font-size: Type.min-label;
-                        font-weight: 600;
-                        color: Palette.signal;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                VerticalLayout {
+                    horizontal-stretch: 0;
+                    alignment: start;
+                    padding-top: 1px;
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        border-radius: 11px;
+                        background: Palette.signal-dim;
+                        border-width: 1px;
+                        border-color: Palette.line-strong;
+                        Text {
+                            text: "3";
+                            font-family: Palette.font-mono;
+                            font-size: Type.min-label;
+                            font-weight: 600;
+                            color: Palette.signal;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
                     }
                 }
                 VerticalLayout {
@@ -180,21 +247,26 @@ export component PageGuideModal inherits ModalOverlay {
 
             if step-4 != "": HorizontalLayout {
                 spacing: Space.s12;
-                Rectangle {
-                    width: 22px;
-                    height: 22px;
-                    border-radius: 11px;
-                    background: Palette.signal-dim;
-                    border-width: 1px;
-                    border-color: Palette.line-strong;
-                    Text {
-                        text: "4";
-                        font-family: Palette.font-mono;
-                        font-size: Type.min-label;
-                        font-weight: 600;
-                        color: Palette.signal;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                VerticalLayout {
+                    horizontal-stretch: 0;
+                    alignment: start;
+                    padding-top: 1px;
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        border-radius: 11px;
+                        background: Palette.signal-dim;
+                        border-width: 1px;
+                        border-color: Palette.line-strong;
+                        Text {
+                            text: "4";
+                            font-family: Palette.font-mono;
+                            font-size: Type.min-label;
+                            font-weight: 600;
+                            color: Palette.signal;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
                     }
                 }
                 VerticalLayout {
@@ -222,3 +294,4 @@ export component PageGuideModal inherits ModalOverlay {
         }
     }
 }
+

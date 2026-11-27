@@ -45,6 +45,7 @@ export component BridgePage inherits VerticalLayout {
             min-width: 0px;
             spacing: 4px;
             HorizontalLayout {
+                alignment: start;
                 spacing: Space.s8;
                 Text {
                     text: "VPS & Migrate";
@@ -52,8 +53,11 @@ export component BridgePage inherits VerticalLayout {
                     font-size: Type.title;
                     font-weight: 600;
                     color: Palette.ink-1;
+                    horizontal-stretch: 0;
                 }
                 VerticalLayout {
+                    width: 32px;
+                    horizontal-stretch: 0;
                     alignment: center;
                     PageInfoButton {
                         clicked => { root.open-guide(); }
@@ -206,7 +210,6 @@ export component BridgePage inherits VerticalLayout {
                         if !compact: Text {
                             text: row.endpoint;
                             horizontal-stretch: 2;
-                            min-width: 0px;
                             font-family: Palette.font-mono;
                             font-size: Type.min-label;
                             color: Palette.ink-2;
@@ -228,7 +231,6 @@ export component BridgePage inherits VerticalLayout {
 
                         HorizontalLayout {
                             horizontal-stretch: 2;
-                            min-width: 0px;
                             alignment: start;
                             VerticalLayout {
                                 alignment: center;
@@ -251,7 +253,6 @@ export component BridgePage inherits VerticalLayout {
 
                         HorizontalLayout {
                             width: 190px;
-                            horizontal-stretch: 0;
                             spacing: 6px;
                             alignment: end;
 
@@ -291,3 +292,4 @@ export component BridgePage inherits VerticalLayout {
         }
     }
 }
+

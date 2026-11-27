@@ -91,6 +91,7 @@ export component SchedulesPage inherits VerticalLayout {
             min-width: 0px;
             spacing: 4px;
             HorizontalLayout {
+                alignment: start;
                 spacing: Space.s8;
                 Text {
                     text: "Schedules";
@@ -98,8 +99,11 @@ export component SchedulesPage inherits VerticalLayout {
                     font-size: Type.title;
                     font-weight: 600;
                     color: Palette.ink-1;
+                    horizontal-stretch: 0;
                 }
                 VerticalLayout {
+                    width: 32px;
+                    horizontal-stretch: 0;
                     alignment: center;
                     PageInfoButton {
                         clicked => { root.open-guide(); }

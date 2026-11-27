@@ -15,6 +15,7 @@ export component FormField inherits VerticalLayout {
 
     forward-focus: input;
     spacing: 6px;
+    vertical-stretch: 0;
 
     Text {
         text: label;
@@ -78,6 +79,8 @@ export component Chip inherits Rectangle {
     callback clicked();
 
     height: 30px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
     border-radius: Palette.r-sm;
     background: selected ? Palette.signal-dim
         : touch.has-hover ? Palette.tier-hover
@@ -136,6 +139,7 @@ export component CycleButton inherits Rectangle {
     callback clicked();
 
     height: 34px;
+    vertical-stretch: 0;
     border-radius: Palette.r-sm;
     background: touch.has-hover ? Palette.tier-hover : Palette.tier-raised;
     border-width: 1px;

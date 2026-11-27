@@ -588,7 +588,7 @@ dependencies = [
 
 [[package]]
 name = "chronobase"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "chronobase-core",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "chronobase-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chacha20poly1305",
  "chrono",

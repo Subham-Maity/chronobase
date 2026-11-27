@@ -5,6 +5,13 @@ All notable changes to ChronoBase will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-11-27
+
+### Fixed
+- **Modal Centering & Compact Sizing:** Replaced manual `x`/`y` modal positioning and unbounded height in `ModalOverlay` with native Slint flex centering (`alignment: center`) and content-driven height (`card-content.preferred-height`), eliminating oversized vertical gaps in form modals and the stretched empty box inside `(i)` Guide modals.
+- **Per-Tab `(i)` Info Button Alignment:** Constrained `PageInfoButton` to a compact `32x32` circular pill (`horizontal-stretch: 0`) aligned cleanly next to each page heading instead of stretching across the header row.
+- **Toast Notification Visibility & Position:** Bound `ToastBanner` height and wrapped `Text` width explicitly (`min-width: 0px`) inside a bottom-right `alignment: end` stack so error, success, and info toast icons and messages render crisply above the bottom edge.
+
 ## [0.2.0] - 2026-11-27
 
 ### Added
