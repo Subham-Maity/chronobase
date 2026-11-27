@@ -13,6 +13,7 @@ component CopyableCommand inherits Rectangle {
     in property <string> command;
 
     height: 36px;
+    clip: true;
     border-radius: Palette.r-sm;
     background: Palette.input-bg;
     border-width: 1px;
@@ -23,6 +24,9 @@ component CopyableCommand inherits Rectangle {
         padding-right: 12px;
         TextInput {
             text: command;
+            horizontal-stretch: 1;
+            min-width: 0px;
+            single-line: true;
             read-only: true;
             font-family: Palette.font-mono;
             font-size: Type.secondary;

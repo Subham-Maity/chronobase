@@ -4,7 +4,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::backup::BackupEntry;
 use crate::connection::DbKind;
+use crate::constant::DEFAULT_GROUP;
 use crate::secret::Secret;
+
+fn default_vps_group() -> String {
+    DEFAULT_GROUP.to_string()
+}
+
+/// Either a direct database connection or a configured VPS Pull peer used as migration endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrateEndpoint {
+    /// Direct database connection ID.
+    Connection(u64),
+    /// Remote VPS Pull peer ID.
+    VpsPeer(u64),
+}
 
 /// Destination for a snapshot pulled from a remote VPS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,6 +37,9 @@ pub struct VpsPeer {
     pub id: u64,
     /// Friendly name (e.g., `"Prod Hetzner VPS"`).
     pub name: String,
+    /// Group name used for Connections organization, backups folder, and cron schedules.
+    #[serde(default = "default_vps_group")]
+    pub group_name: String,
     /// Agent TCP endpoint (`host:port`, e.g., `"127.0.0.1:9443"` or `"203.0.113.10:9443"`).
     pub endpoint: String,
     /// Remote database engine.
@@ -45,6 +62,8 @@ pub struct VpsPeer {
 pub struct CreateVpsPeerInput {
     /// Friendly name.
     pub name: String,
+    /// Group name (defaults to `"Default"` if blank).
+    pub group_name: String,
     /// Agent endpoint (`host:port`).
     pub endpoint: String,
     /// Remote DB engine.
@@ -62,6 +81,8 @@ pub struct CreateVpsPeerInput {
 pub struct UpdateVpsPeerInput {
     /// Updated name.
     pub name: String,
+    /// Updated group name (defaults to `"Default"` if blank).
+    pub group_name: String,
     /// Updated endpoint (`host:port`).
     pub endpoint: String,
     /// Updated engine.

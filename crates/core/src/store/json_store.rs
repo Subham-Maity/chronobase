@@ -83,10 +83,21 @@ fn default_v1_schema_version() -> u32 {
     1
 }
 
+/// User-configurable desktop background & startup preferences.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppSettings {
+    /// When `true`, closing the main window hides it to the system tray so cron schedules keep running.
+    #[serde(default)]
+    pub run_in_background: bool,
+    /// When `true`, ChronoBase is registered to launch minimized (`--tray`) on OS login.
+    #[serde(default)]
+    pub run_on_startup: bool,
+}
+
 /// Root persisted state matching ChronoBase v1's `chronobase-data.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoreData {
-    /// Schema version (`1` for v1 files without this field, `2` for current).
+    /// Schema version (`1` for v1 files without this field, `3` for current).
     #[serde(default = "default_v1_schema_version")]
     pub schema_version: u32,
     /// Saved database connections.
@@ -101,6 +112,9 @@ pub struct StoreData {
     /// Configured remote VPS pull peers.
     #[serde(default)]
     pub vps_peers: Vec<VpsPeer>,
+    /// Desktop background tray & startup settings.
+    #[serde(default)]
+    pub settings: AppSettings,
     /// Auto-increment sequence counters.
     #[serde(default)]
     pub _seq: Seq,
@@ -114,6 +128,7 @@ impl Default for StoreData {
             backups: Vec::new(),
             schedules: Vec::new(),
             vps_peers: Vec::new(),
+            settings: AppSettings::default(),
             _seq: Seq::default(),
         }
     }
@@ -253,12 +268,13 @@ impl JsonStore {
         }
     }
 
-    /// Resolves and validates a stored backup path before deletion.
+    /// Resolves and validates a stored backup path against `backups_dir`
+    /// without requiring existence (returns canonicalized path if present).
     ///
     /// Security: canonicalizes both `backups_dir` and the target path and asserts
     /// `target.starts_with(&canon_backups)` so a tampered `chronobase-data.json`
-    /// (e.g., `file_path: "../../etc/passwd"`) can never cause arbitrary file deletion.
-    pub fn resolve_backup_path_for_delete(&self, stored_path: &str) -> Result<PathBuf, StoreError> {
+    /// (e.g., `file_path: "../../etc/passwd"`) can never be deleted or opened.
+    pub fn resolve_backup_path_checked(&self, stored_path: &str) -> Result<PathBuf, StoreError> {
         let resolved = self.resolve_backup_path(stored_path)?;
         if !resolved.exists() {
             return Ok(resolved);
@@ -268,11 +284,16 @@ impl JsonStore {
         let canon_target = fs::canonicalize(&resolved)?;
 
         if !canon_target.starts_with(&canon_backups) || canon_target == canon_backups {
-            tracing::warn!("blocked attempt to delete path outside backups directory");
+            tracing::warn!("blocked attempt to access path outside backups directory");
             return Err(StoreError::PathOutsideBackupsDir);
         }
 
         Ok(canon_target)
+    }
+
+    /// Resolves and validates a stored backup path before deletion.
+    pub fn resolve_backup_path_for_delete(&self, stored_path: &str) -> Result<PathBuf, StoreError> {
+        self.resolve_backup_path_checked(stored_path)
     }
 
     /// Spawns a background task that debounces store writes and performs a final
@@ -392,12 +413,21 @@ fn is_cross_platform_absolute(raw: &str) -> bool {
             && (b[2] == b'/' || b[2] == b'\\'))
 }
 
-/// Extracts `<GroupSlug>/<filename>` from a Windows or Unix path string.
+/// Extracts `<GroupSlug>/[<YYYY-MM-DD>/]<filename>` from a Windows or Unix path string.
 fn extract_group_file_tail(raw_path: &str) -> Option<String> {
     let parts: Vec<&str> = raw_path
         .split(['/', '\\'])
         .filter(|s| !s.is_empty())
         .collect();
+    if let Some(pos) = parts
+        .iter()
+        .rposition(|p| p.eq_ignore_ascii_case("backups"))
+    {
+        let tail = &parts[pos + 1..];
+        if !tail.is_empty() && tail.len() <= 3 && tail.iter().all(|s| *s != "." && *s != "..") {
+            return Some(tail.join("/"));
+        }
+    }
     if parts.len() >= 2 {
         let group = parts[parts.len() - 2];
         let name = parts[parts.len() - 1];
@@ -534,6 +564,15 @@ mod tests {
             .expect_err("must reject traversal");
         assert!(matches!(err, StoreError::PathOutsideBackupsDir));
         assert!(outside_file.exists());
+
+        // Verify 3-segment Group/Date/File path extraction works cleanly.
+        assert_eq!(
+            extract_group_file_tail(
+                r"C:\Old\chronobase\backups\FXam\2026-11-27\Fxam_20261127_020001.sql"
+            )
+            .as_deref(),
+            Some("FXam/2026-11-27/Fxam_20261127_020001.sql")
+        );
 
         drop(store);
         let _ = fs::remove_dir_all(&dir);

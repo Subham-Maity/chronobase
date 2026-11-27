@@ -42,4 +42,4 @@ pub const PHRASE_DELETE_ALL: &str = "DELETE EVERYTHING";
 pub const STORE_FLUSH_DEBOUNCE: Duration = Duration::from_millis(250);
 
 /// Current JSON schema version written by this version of ChronoBase.
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;

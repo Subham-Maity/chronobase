@@ -1,0 +1,36 @@
+// Native cross-platform system tray icon & menu (Slint SystemTrayIcon)
+
+export component AppTray inherits SystemTrayIcon {
+    in property <string> status-line: "ChronoBase ready";
+    in property <bool> backup-busy: false;
+
+    callback open-window();
+    callback backup-all-now();
+    callback quit-app();
+
+    icon: @image-url("../assets/icon.png");
+    tooltip: "ChronoBase — Backup & Cron Manager";
+
+    Menu {
+        MenuItem {
+            title: status-line;
+            enabled: false;
+        }
+        MenuSeparator {}
+        MenuItem {
+            title: "Open ChronoBase";
+            activated => { root.open-window(); }
+        }
+        MenuItem {
+            title: backup-busy ? "Backing up..." : "Back up all now";
+            enabled: !backup-busy;
+            activated => { root.backup-all-now(); }
+        }
+        MenuSeparator {}
+        MenuItem {
+            title: "Quit ChronoBase";
+            activated => { root.quit-app(); }
+        }
+    }
+}
+

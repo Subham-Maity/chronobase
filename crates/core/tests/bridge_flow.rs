@@ -97,6 +97,7 @@ async fn vps_pull_authenticates_encrypts_verifies_sha_and_deletes_remote_staging
     let wrong_key = generate_pairing_key().expect("wrong key");
     let err = pull_remote_dump(
         &local_backups,
+        "ProdGroup",
         "ProdVPS",
         &addr,
         DbKind::Postgres,
@@ -107,9 +108,10 @@ async fn vps_pull_authenticates_encrypts_verifies_sha_and_deletes_remote_staging
     .expect_err("wrong key must fail");
     assert!(matches!(err, BridgeError::AuthFailed));
 
-    // 2. Valid key pulls encrypted dump, verifies SHA-256, and deletes VPS staging dir
+    // 2. Valid key pulls encrypted dump into <Group>/<YYYY-MM-DD>/, verifies SHA-256, and deletes VPS staging dir
     let ok = pull_remote_dump(
         &local_backups,
+        "ProdGroup",
         "ProdVPS",
         &addr,
         DbKind::Postgres,

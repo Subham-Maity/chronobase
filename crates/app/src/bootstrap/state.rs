@@ -21,7 +21,9 @@ use chronobase_core::schedule::{
     StoreScheduleRepository,
 };
 use chronobase_core::store::JsonStore;
-use chronobase_core::system::{DangerService, DefaultDangerService};
+use chronobase_core::system::{
+    DangerService, DefaultDangerService, DefaultSettingsService, SettingsService,
+};
 use chronobase_core::tools::{DefaultToolDiscovery, ToolDiscovery};
 
 /// Shared application state wired once at startup and passed via `Arc`.
@@ -39,6 +41,8 @@ pub struct AppState {
     pub bridge_service: Arc<dyn BridgeService>,
     /// Danger Zone destructive operations service.
     pub danger_service: Arc<dyn DangerService>,
+    /// Desktop background tray and OS startup settings service.
+    pub settings_service: Arc<dyn SettingsService>,
     /// Cached external CLI tool discovery.
     pub tool_discovery: Arc<dyn ToolDiscovery>,
     /// Background cron scheduler runner.
@@ -81,12 +85,15 @@ impl AppState {
             conn_repo,
             backup_repo,
             Arc::clone(&backup_service),
+            Arc::clone(&tool_discovery),
         ));
         let danger_service: Arc<dyn DangerService> =
             Arc::new(DefaultDangerService::new(Arc::clone(&store)));
+        let settings_service: Arc<dyn SettingsService> =
+            Arc::new(DefaultSettingsService::new(Arc::clone(&store)));
         let schedule_runner = Arc::new(ScheduleRunner::new(
             schedule_repo,
-            Arc::clone(&backup_service),
+            Arc::clone(&bridge_service),
             schedule_reload,
         ));
 
@@ -97,6 +104,7 @@ impl AppState {
             schedule_service,
             bridge_service,
             danger_service,
+            settings_service,
             tool_discovery,
             schedule_runner,
         })

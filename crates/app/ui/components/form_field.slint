@@ -27,6 +27,7 @@ export component FormField inherits VerticalLayout {
 
     Rectangle {
         height: 40px;
+        clip: true;
         border-radius: Palette.r-sm;
         background: danger ? rgba(12, 10, 9, 0.95) : Palette.input-bg;
         border-width: input.has-focus ? 2px : 1px;
@@ -38,11 +39,18 @@ export component FormField inherits VerticalLayout {
         animate border-color { duration: Motion.micro; easing: ease-out; }
 
         HorizontalLayout {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
             padding-left: 12px;
             padding-right: 12px;
 
             input := TextInput {
                 text <=> root.value;
+                horizontal-stretch: 1;
+                min-width: 0px;
+                single-line: true;
                 font-family: mono || danger ? Palette.font-mono : Palette.font-ui;
                 font-size: mono ? Type.secondary : Type.body;
                 color: danger ? Palette.bad : Palette.ink-1;
@@ -55,11 +63,13 @@ export component FormField inherits VerticalLayout {
 
         if root.value == "" && placeholder != "": Text {
             x: 12px;
+            width: max(0px, parent.width - 24px);
             text: placeholder;
             font-family: mono || danger ? Palette.font-mono : Palette.font-ui;
             font-size: mono ? Type.secondary : Type.body;
             color: Palette.ink-3;
             vertical-alignment: center;
+            overflow: elide;
             height: parent.height;
         }
     }

@@ -12,13 +12,13 @@ use chrono::{DateTime, Local};
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 
-use crate::backup::BackupService;
+use crate::bridge::BridgeService;
 use crate::schedule::{Schedule, ScheduleRepository, parse_cron_expr};
 
 /// Coordinates the single background scheduler task.
 pub struct ScheduleRunner {
     repo: Arc<dyn ScheduleRepository>,
-    backup_service: Arc<dyn BackupService>,
+    bridge_service: Arc<dyn BridgeService>,
     reload_notify: Arc<Notify>,
     in_flight: Arc<Mutex<HashSet<u64>>>,
 }
@@ -27,12 +27,12 @@ impl ScheduleRunner {
     /// Creates a new [`ScheduleRunner`].
     pub fn new(
         repo: Arc<dyn ScheduleRepository>,
-        backup_service: Arc<dyn BackupService>,
+        bridge_service: Arc<dyn BridgeService>,
         reload_notify: Arc<Notify>,
     ) -> Self {
         Self {
             repo,
-            backup_service,
+            bridge_service,
             reload_notify,
             in_flight: Arc::new(Mutex::new(HashSet::new())),
         }
@@ -147,7 +147,11 @@ impl ScheduleRunner {
             "schedule triggered"
         );
 
-        match self.backup_service.backup_group(&sched.group_name).await {
+        match self
+            .bridge_service
+            .backup_all_in_group(&sched.group_name)
+            .await
+        {
             Ok(results) => {
                 let ok_count = results
                     .iter()
@@ -206,8 +210,9 @@ async fn sleep_optional(duration: Option<Duration>) {
 mod tests {
     use super::*;
     use crate::backup::engine::MockCommandRunner;
-    use crate::backup::{DefaultBackupService, StoreBackupRepository};
-    use crate::connection::StoreConnectionRepository;
+    use crate::backup::{BackupRepository, DefaultBackupService, StoreBackupRepository};
+    use crate::bridge::{DefaultBridgeService, StoreVpsPeerRepository};
+    use crate::connection::{ConnectionRepository, StoreConnectionRepository};
     use crate::schedule::StoreScheduleRepository;
     use crate::store::JsonStore;
     use crate::tools::ToolDiscovery;
@@ -241,17 +246,30 @@ mod tests {
     fn in_flight_guard_prevents_concurrent_duplicate_runs() {
         let dir = temp_dir("inflight");
         let store = Arc::new(JsonStore::open(dir.clone()).expect("open"));
-        let conn_repo = Arc::new(StoreConnectionRepository::new(Arc::clone(&store)));
-        let bk_repo = Arc::new(StoreBackupRepository::new(Arc::clone(&store)));
+        let conn_repo: Arc<dyn ConnectionRepository> =
+            Arc::new(StoreConnectionRepository::new(Arc::clone(&store)));
+        let bk_repo: Arc<dyn BackupRepository> =
+            Arc::new(StoreBackupRepository::new(Arc::clone(&store)));
+        let peer_repo: Arc<dyn crate::bridge::VpsPeerRepository> =
+            Arc::new(StoreVpsPeerRepository::new(Arc::clone(&store)));
         let sched_repo = Arc::new(StoreScheduleRepository::new(Arc::clone(&store)));
-        let bk_svc = Arc::new(DefaultBackupService::new(
+        let tools: Arc<dyn ToolDiscovery> = Arc::new(StubTools);
+        let bk_svc: Arc<dyn crate::backup::BackupService> = Arc::new(DefaultBackupService::new(
             Arc::clone(&store),
-            conn_repo,
-            bk_repo,
-            Arc::new(StubTools),
+            Arc::clone(&conn_repo),
+            Arc::clone(&bk_repo),
+            Arc::clone(&tools),
             Arc::new(MockCommandRunner::new()),
         ));
-        let runner = ScheduleRunner::new(sched_repo, bk_svc, Arc::new(Notify::new()));
+        let bridge_svc = Arc::new(DefaultBridgeService::new(
+            Arc::clone(&store),
+            peer_repo,
+            conn_repo,
+            bk_repo,
+            bk_svc,
+            tools,
+        ));
+        let runner = ScheduleRunner::new(sched_repo, bridge_svc, Arc::new(Notify::new()));
 
         assert!(runner.try_mark_in_flight(42));
         assert!(!runner.try_mark_in_flight(42));

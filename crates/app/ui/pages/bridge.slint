@@ -11,6 +11,7 @@ import { PageInfoButton } from "../components/page_guide.slint";
 export struct VpsPeerRow {
     id: int,
     name: string,
+    group-name: string,
     endpoint: string,
     db-type: string,
     fingerprint: string,
@@ -199,7 +200,7 @@ export component BridgePage inherits VerticalLayout {
                                 overflow: elide;
                             }
                             Text {
-                                text: "Last pull: " + row.last-pull;
+                                text: row.group-name + " · Last pull: " + row.last-pull;
                                 font-family: Palette.font-ui;
                                 font-size: Type.min-label;
                                 color: Palette.ink-3;

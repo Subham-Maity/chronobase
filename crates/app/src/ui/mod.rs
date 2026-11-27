@@ -16,11 +16,12 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use chrono::{Local, NaiveDateTime, TimeZone};
-use slint::{ComponentHandle, Weak};
+use slint::{CloseRequestResponse, ComponentHandle, Weak};
 
 use chronobase_core::backup::{BackupStatus, RestoreTarget};
 use chronobase_core::bridge::{
-    CreateVpsPeerInput, PullTargetMode, UpdateVpsPeerInput, generate_pairing_key, key_fingerprint,
+    CreateVpsPeerInput, MigrateEndpoint, PullTargetMode, UpdateVpsPeerInput, generate_pairing_key,
+    key_fingerprint,
 };
 use chronobase_core::connection::{CreateConnectionInput, DbKind, UpdateConnectionInput};
 use chronobase_core::constant::ALL_GROUPS;
@@ -33,13 +34,27 @@ use crate::ui::toast::{ToastKind, show_toast};
 
 slint::include_modules!();
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct FilterState {
     conn_group: Option<String>,
     conn_type: Option<DbKind>,
     bk_group: Option<String>,
     bk_type: Option<DbKind>,
     bk_status: Option<BackupStatus>,
+    bk_grouped_by_date: bool,
+}
+
+impl Default for FilterState {
+    fn default() -> Self {
+        Self {
+            conn_group: None,
+            conn_type: None,
+            bk_group: None,
+            bk_type: None,
+            bk_status: None,
+            bk_grouped_by_date: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -89,13 +104,25 @@ pub fn fmt_relative(raw: &str) -> String {
     }
 }
 
-/// Launches the Slint GUI on the current thread and spawns the dedicated background runtime.
-pub fn run_gui(state: Arc<AppState>) -> ExitCode {
+/// Launches the Slint GUI (or starts minimized to the system tray) and spawns the background runtime.
+pub fn run_gui(state: Arc<AppState>, start_in_tray: bool) -> ExitCode {
     let window = match MainWindow::new() {
         Ok(w) => w,
         Err(err) => {
             eprintln!("Failed to initialize GUI window: {err}");
             return ExitCode::FAILURE;
+        }
+    };
+
+    let settings = state.settings_service.get();
+    window.set_bg_run_enabled(settings.run_in_background);
+    window.set_startup_enabled(settings.run_on_startup);
+
+    let tray = match AppTray::new() {
+        Ok(t) => Some(t),
+        Err(err) => {
+            tracing::warn!(error = %err, "System tray is unavailable in this desktop session");
+            None
         }
     };
 
@@ -117,10 +144,61 @@ pub fn run_gui(state: Arc<AppState>) -> ExitCode {
         }
     };
 
-    wire_callbacks(&window, &state, &rt, &filters);
+    if let Some(ref tray_inst) = tray {
+        if settings.run_in_background || start_in_tray {
+            let _ = tray_inst.show();
+        }
+        let weak_open = window.as_weak();
+        tray_inst.on_open_window(move || {
+            if let Some(w) = weak_open.upgrade() {
+                let _ = w.show();
+            }
+        });
+        let rt_bk = Rc::clone(&rt);
+        let weak_bk = window.as_weak();
+        tray_inst.on_backup_all_now(move || {
+            if let Some(w) = weak_bk.upgrade() {
+                w.set_backup_all_busy(true);
+            }
+            rt_bk.send(AppCommand::BackupGroup {
+                group_name: ALL_GROUPS.to_string(),
+            });
+        });
+        tray_inst.on_quit_app(move || {
+            let _ = slint::quit_event_loop();
+        });
+    }
+
+    {
+        let st = Arc::clone(&state);
+        let weak_close = window.as_weak();
+        window.window().on_close_requested(move || {
+            let bg_enabled = st.settings_service.get().run_in_background;
+            if bg_enabled {
+                if let Some(w) = weak_close.upgrade() {
+                    let _ = w.hide();
+                }
+                CloseRequestResponse::HideWindow
+            } else {
+                let _ = slint::quit_event_loop();
+                CloseRequestResponse::KeepWindowShown
+            }
+        });
+    }
+
+    let tray_weak = tray.as_ref().map(|t| t.as_weak());
+    wire_callbacks(&window, &state, &rt, &filters, tray_weak);
     rt.send(AppCommand::RefreshAll);
 
-    if let Err(err) = window.run() {
+    if !start_in_tray && let Err(err) = window.show() {
+        tracing::error!(error = %err, "Failed to show main window");
+        if let Ok(rt_owned) = Rc::try_unwrap(rt) {
+            rt_owned.shutdown();
+        }
+        return ExitCode::FAILURE;
+    }
+
+    if let Err(err) = slint::run_event_loop() {
         tracing::error!(error = %err, "Slint event loop exited with error");
         if let Ok(rt_owned) = Rc::try_unwrap(rt) {
             rt_owned.shutdown();
@@ -139,8 +217,33 @@ fn wire_callbacks(
     state: &Arc<AppState>,
     rt: &Rc<BackgroundRuntime>,
     filters: &Arc<Mutex<FilterState>>,
+    tray_weak: Option<Weak<AppTray>>,
 ) {
     let pending_confirm: Rc<RefCell<Option<PendingConfirm>>> = Rc::new(RefCell::new(None));
+
+    // Sidebar Background Engine & OS Startup toggles
+    {
+        let rt = Rc::clone(rt);
+        let tray_w = tray_weak.clone();
+        window.on_toggle_run_in_background(move |enabled| {
+            if let Some(ref tw) = tray_w
+                && let Some(t) = tw.upgrade()
+            {
+                if enabled {
+                    let _ = t.show();
+                } else {
+                    let _ = t.hide();
+                }
+            }
+            rt.send(AppCommand::SetRunInBackground { enabled });
+        });
+    }
+    {
+        let rt = Rc::clone(rt);
+        window.on_toggle_run_on_startup(move |enabled| {
+            rt.send(AppCommand::SetRunOnStartup { enabled });
+        });
+    }
 
     // Navigation
     {
@@ -150,7 +253,7 @@ fn wire_callbacks(
         });
     }
 
-    // Dashboard Backup All
+    // Dashboard Backup All & Group Backup
     {
         let rt = Rc::clone(rt);
         let weak = window.as_weak();
@@ -160,6 +263,18 @@ fn wire_callbacks(
             }
             rt.send(AppCommand::BackupGroup {
                 group_name: ALL_GROUPS.to_string(),
+            });
+        });
+    }
+    {
+        let rt = Rc::clone(rt);
+        let weak = window.as_weak();
+        window.on_backup_group_named(move |group_name| {
+            if let Some(w) = weak.upgrade() {
+                w.set_backup_group_busy(true);
+            }
+            rt.send(AppCommand::BackupGroup {
+                group_name: group_name.into(),
             });
         });
     }
@@ -221,13 +336,21 @@ fn wire_callbacks(
         });
     }
 
-    // Connection CRUD & row actions
+    // Connection + VPS unified CRUD & row actions
     {
         let rt = Rc::clone(rt);
-        window.on_backup_connection(move |id| {
-            rt.send(AppCommand::BackupConnection {
-                connection_id: id as u64,
-            });
+        let weak = window.as_weak();
+        window.on_backup_one_entry(move |origin, id| {
+            if origin == "vps" {
+                if let Some(w) = weak.upgrade() {
+                    w.set_pull_busy(true);
+                }
+                rt.send(AppCommand::PullFromVps { peer_id: id as u64 });
+            } else {
+                rt.send(AppCommand::BackupConnection {
+                    connection_id: id as u64,
+                });
+            }
         });
     }
     {
@@ -247,8 +370,10 @@ fn wire_callbacks(
     {
         let st = Arc::clone(state);
         let weak = window.as_weak();
-        window.on_open_edit_connection(move |id| {
-            if let Ok(conn) = st.connection_service.get(id as u64)
+        window.on_edit_one_entry(move |origin, id| {
+            if origin == "vps" {
+                open_edit_vps_modal(&st, &weak, id);
+            } else if let Ok(conn) = st.connection_service.get(id as u64)
                 && let Some(w) = weak.upgrade()
             {
                 w.set_conn_edit_id(conn.id as i32);
@@ -322,24 +447,38 @@ fn wire_callbacks(
         let st = Arc::clone(state);
         let weak = window.as_weak();
         let pending = Rc::clone(&pending_confirm);
-        window.on_request_delete_connection(move |id| {
-            let name = st
-                .connection_service
-                .get(id as u64)
-                .map(|c| c.name)
-                .unwrap_or_else(|_| "this connection".to_string());
-            *pending.borrow_mut() = Some(PendingConfirm::DeleteConnection(id as u64));
-            if let Some(w) = weak.upgrade() {
-                w.set_confirm_title("Remove connection?".into());
-                w.set_confirm_body(
-                    format!(
-                        "{name} will be removed from ChronoBase. Existing backup files on disk are kept."
-                    )
-                    .into(),
-                );
-                w.set_confirm_label("Remove".into());
-                w.set_confirm_destructive(false);
-                w.set_confirm_open(true);
+        window.on_delete_one_entry(move |origin, id| {
+            if origin == "vps" {
+                *pending.borrow_mut() = Some(PendingConfirm::DeleteVpsPeer(id as u64));
+                if let Some(w) = weak.upgrade() {
+                    w.set_confirm_title("Delete this VPS peer?".into());
+                    w.set_confirm_body(
+                        "Removes this VPS peer configuration locally. Existing snapshots in backups/ are kept."
+                            .into(),
+                    );
+                    w.set_confirm_label("Delete VPS peer".into());
+                    w.set_confirm_destructive(true);
+                    w.set_confirm_open(true);
+                }
+            } else {
+                let name = st
+                    .connection_service
+                    .get(id as u64)
+                    .map(|c| c.name)
+                    .unwrap_or_else(|_| "this connection".to_string());
+                *pending.borrow_mut() = Some(PendingConfirm::DeleteConnection(id as u64));
+                if let Some(w) = weak.upgrade() {
+                    w.set_confirm_title("Remove connection?".into());
+                    w.set_confirm_body(
+                        format!(
+                            "{name} will be removed from ChronoBase. Existing backup files on disk are kept."
+                        )
+                        .into(),
+                    );
+                    w.set_confirm_label("Remove".into());
+                    w.set_confirm_destructive(false);
+                    w.set_confirm_open(true);
+                }
             }
         });
     }
@@ -372,6 +511,30 @@ fn wire_callbacks(
     {
         let rt = Rc::clone(rt);
         let filters = Arc::clone(filters);
+        window.on_toggle_bk_grouped_view(move |grouped| {
+            let (group, db_type, status) = {
+                let mut f = filters.lock().unwrap_or_else(|p| p.into_inner());
+                f.bk_grouped_by_date = grouped;
+                (f.bk_group.clone(), f.bk_type, f.bk_status)
+            };
+            rt.send(AppCommand::FilterBackups {
+                group,
+                db_type,
+                status,
+            });
+        });
+    }
+    {
+        let rt = Rc::clone(rt);
+        window.on_reveal_backup(move |id| {
+            rt.send(AppCommand::RevealBackup {
+                backup_id: id as u64,
+            });
+        });
+    }
+    {
+        let rt = Rc::clone(rt);
+        let filters = Arc::clone(filters);
         let weak = window.as_weak();
         window.on_cycle_bk_type_filter(move || {
             let (group, db_type, status, label) = {
@@ -388,6 +551,30 @@ fn wire_callbacks(
                 group,
                 db_type,
                 status,
+            });
+        });
+    }
+    {
+        let rt = Rc::clone(rt);
+        let filters = Arc::clone(filters);
+        window.on_toggle_bk_grouped_view(move |grouped| {
+            let (group, db_type, status) = {
+                let mut f = filters.lock().unwrap_or_else(|p| p.into_inner());
+                f.bk_grouped_by_date = grouped;
+                (f.bk_group.clone(), f.bk_type, f.bk_status)
+            };
+            rt.send(AppCommand::FilterBackups {
+                group,
+                db_type,
+                status,
+            });
+        });
+    }
+    {
+        let rt = Rc::clone(rt);
+        window.on_reveal_backup(move |id| {
+            rt.send(AppCommand::RevealBackup {
+                backup_id: id as u64,
             });
         });
     }
@@ -418,6 +605,30 @@ fn wire_callbacks(
                 group,
                 db_type,
                 status,
+            });
+        });
+    }
+    {
+        let rt = Rc::clone(rt);
+        let filters = Arc::clone(filters);
+        window.on_toggle_bk_grouped_view(move |grouped| {
+            let (group, db_type, status) = {
+                let mut f = filters.lock().unwrap_or_else(|p| p.into_inner());
+                f.bk_grouped_by_date = grouped;
+                (f.bk_group.clone(), f.bk_type, f.bk_status)
+            };
+            rt.send(AppCommand::FilterBackups {
+                group,
+                db_type,
+                status,
+            });
+        });
+    }
+    {
+        let rt = Rc::clone(rt);
+        window.on_reveal_backup(move |id| {
+            rt.send(AppCommand::RevealBackup {
+                backup_id: id as u64,
             });
         });
     }
@@ -641,6 +852,7 @@ fn wire_callbacks(
             if let Some(w) = weak.upgrade() {
                 w.set_vps_edit_id(-1);
                 w.set_vps_form_name("".into());
+                w.set_vps_form_group("Default".into());
                 w.set_vps_form_endpoint("".into());
                 w.set_vps_form_type("postgres".into());
                 w.set_vps_form_remote_url("".into());
@@ -656,35 +868,7 @@ fn wire_callbacks(
         let st = Arc::clone(state);
         let weak = window.as_weak();
         window.on_open_edit_vps(move |id| {
-            let Ok(peer) = st.bridge_service.get_peer(id as u64) else {
-                return;
-            };
-            let conns = st
-                .connection_service
-                .list_filtered(None, None)
-                .unwrap_or_default();
-            let conn_names: HashMap<u64, String> =
-                conns.into_iter().map(|c| (c.id, c.name)).collect();
-            let (target_id, target_label) = match peer.target_mode {
-                PullTargetMode::StorageOnly => (0, "Local backups/ storage ONLY".to_string()),
-                PullTargetMode::LocalConnection(cid) => (
-                    cid as i32,
-                    bridge::format_target_label(peer.target_mode, &conn_names),
-                ),
-            };
-            let fp = key_fingerprint(&peer.pairing_key);
-            if let Some(w) = weak.upgrade() {
-                w.set_vps_edit_id(peer.id as i32);
-                w.set_vps_form_name(peer.name.into());
-                w.set_vps_form_endpoint(peer.endpoint.into());
-                w.set_vps_form_type(peer.db_type.as_str().into());
-                w.set_vps_form_remote_url(peer.remote_url.expose().into());
-                w.set_vps_form_key(peer.pairing_key.expose().into());
-                w.set_vps_form_fingerprint(fp.into());
-                w.set_vps_form_target_id(target_id);
-                w.set_vps_form_target_label(target_label.into());
-                w.set_vps_modal_open(true);
-            }
+            open_edit_vps_modal(&st, &weak, id);
         });
     }
     {
@@ -748,7 +932,7 @@ fn wire_callbacks(
     {
         let rt = Rc::clone(rt);
         window.on_save_vps_peer(
-            move |edit_id, name, endpoint, db_type, remote_url, key, target_id| {
+            move |edit_id, name, group_name, endpoint, db_type, remote_url, key, target_id| {
                 let target_mode = if target_id <= 0 {
                     PullTargetMode::StorageOnly
                 } else {
@@ -763,6 +947,7 @@ fn wire_callbacks(
                     rt.send(AppCommand::CreateVpsPeer {
                         input: CreateVpsPeerInput {
                             name: name.into(),
+                            group_name: group_name.into(),
                             endpoint: endpoint.into(),
                             db_type: db_kind,
                             remote_url: Secret::new(remote_url.to_string()),
@@ -775,6 +960,7 @@ fn wire_callbacks(
                         id: edit_id as u64,
                         input: UpdateVpsPeerInput {
                             name: name.into(),
+                            group_name: group_name.into(),
                             endpoint: endpoint.into(),
                             db_type: db_kind,
                             remote_url: Secret::new(remote_url.to_string()),
@@ -817,26 +1003,41 @@ fn wire_callbacks(
         let st = Arc::clone(state);
         let weak = window.as_weak();
         window.on_open_migrate_modal(move || {
+            let sources = build_migrate_sources(&st);
             let conns = st
                 .connection_service
                 .list_filtered(None, None)
                 .unwrap_or_default();
-            if conns.len() < 2 {
+            if conns.is_empty() || (sources.len() < 2) {
                 show_toast(
                     &weak,
-                    "Add at least two connections to migrate between DBs".to_string(),
+                    "Add a destination connection plus at least one other connection or VPS peer to migrate"
+                        .to_string(),
                     ToastKind::Error,
                 );
                 return;
             }
-            let src = &conns[0];
+            // Prefer starting on a VPS peer if available, otherwise first connection
+            let (src_kind, src_id, src_type, src_label) = sources
+                .iter()
+                .find(|(k, _, _, _)| *k == "vps")
+                .cloned()
+                .unwrap_or_else(|| sources[0].clone());
             let dst = conns
                 .iter()
-                .find(|c| c.id != src.id && c.db_type == src.db_type)
-                .unwrap_or(&conns[1]);
+                .find(|c| {
+                    !(src_kind == "conn" && c.id == src_id) && c.db_type == src_type
+                })
+                .or_else(|| {
+                    conns
+                        .iter()
+                        .find(|c| !(src_kind == "conn" && c.id == src_id))
+                })
+                .unwrap_or(&conns[0]);
             if let Some(w) = weak.upgrade() {
-                w.set_migrate_src_id(src.id as i32);
-                w.set_migrate_src_label(format!("{} ({})", src.name, src.db_type.as_str()).into());
+                w.set_migrate_src_kind(src_kind.into());
+                w.set_migrate_src_id(src_id as i32);
+                w.set_migrate_src_label(src_label.into());
                 w.set_migrate_dst_id(dst.id as i32);
                 w.set_migrate_dst_label(format!("{} ({})", dst.name, dst.db_type.as_str()).into());
                 w.set_migrate_busy(false);
@@ -848,25 +1049,22 @@ fn wire_callbacks(
         let st = Arc::clone(state);
         let weak = window.as_weak();
         window.on_cycle_migrate_src(move || {
-            let conns = st
-                .connection_service
-                .list_filtered(None, None)
-                .unwrap_or_default();
-            if conns.is_empty() {
+            let sources = build_migrate_sources(&st);
+            if sources.is_empty() {
                 return;
             }
             if let Some(w) = weak.upgrade() {
-                let current = w.get_migrate_src_id();
-                let idx = conns
+                let cur_kind = w.get_migrate_src_kind();
+                let cur_id = w.get_migrate_src_id();
+                let idx = sources
                     .iter()
-                    .position(|c| c.id as i32 == current)
-                    .map(|i| (i + 1) % conns.len())
+                    .position(|(k, id, _, _)| *k == cur_kind.as_str() && *id as i32 == cur_id)
+                    .map(|i| (i + 1) % sources.len())
                     .unwrap_or(0);
-                let next = &conns[idx];
-                w.set_migrate_src_id(next.id as i32);
-                w.set_migrate_src_label(
-                    format!("{} ({})", next.name, next.db_type.as_str()).into(),
-                );
+                let (kind, id, _, ref label) = sources[idx];
+                w.set_migrate_src_kind(kind.into());
+                w.set_migrate_src_id(id as i32);
+                w.set_migrate_src_label(label.as_str().into());
             }
         });
     }
@@ -882,9 +1080,13 @@ fn wire_callbacks(
                 return;
             }
             if let Some(w) = weak.upgrade() {
+                let src_kind = w.get_migrate_src_kind();
                 let src_id = w.get_migrate_src_id();
                 let candidates: Vec<_> = if conns.len() > 1 {
-                    conns.iter().filter(|c| c.id as i32 != src_id).collect()
+                    conns
+                        .iter()
+                        .filter(|c| !(src_kind == "conn" && c.id as i32 == src_id))
+                        .collect()
                 } else {
                     conns.iter().collect()
                 };
@@ -912,23 +1114,87 @@ fn wire_callbacks(
             let Some(w) = weak.upgrade() else {
                 return;
             };
+            let src_kind = w.get_migrate_src_kind();
             let src_id = w.get_migrate_src_id();
             let dst_id = w.get_migrate_dst_id();
-            if src_id <= 0 || dst_id <= 0 || src_id == dst_id {
+            if src_id <= 0 || dst_id <= 0 || (src_kind == "conn" && src_id == dst_id) {
                 show_toast(
                     &weak,
-                    "Choose two distinct connections to migrate".to_string(),
+                    "Choose a valid source (VPS or DB) and a distinct destination connection"
+                        .to_string(),
                     ToastKind::Error,
                 );
                 return;
             }
+            let source = if src_kind == "vps" {
+                MigrateEndpoint::VpsPeer(src_id as u64)
+            } else {
+                MigrateEndpoint::Connection(src_id as u64)
+            };
             w.set_migrate_busy(true);
-            rt.send(AppCommand::MigrateDbToDb {
-                source_conn_id: src_id as u64,
-                dest_conn_id: dst_id as u64,
+            rt.send(AppCommand::MigrateEndpoints {
+                source,
+                dest: MigrateEndpoint::Connection(dst_id as u64),
             });
         });
     }
+}
+
+fn open_edit_vps_modal(st: &Arc<AppState>, weak: &Weak<MainWindow>, id: i32) {
+    let Ok(peer) = st.bridge_service.get_peer(id as u64) else {
+        return;
+    };
+    let conns = st
+        .connection_service
+        .list_filtered(None, None)
+        .unwrap_or_default();
+    let conn_names: HashMap<u64, String> = conns.into_iter().map(|c| (c.id, c.name)).collect();
+    let (target_id, target_label) = match peer.target_mode {
+        PullTargetMode::StorageOnly => (0, "Local backups/ storage ONLY".to_string()),
+        PullTargetMode::LocalConnection(cid) => (
+            cid as i32,
+            bridge::format_target_label(peer.target_mode, &conn_names),
+        ),
+    };
+    let fp = key_fingerprint(&peer.pairing_key);
+    if let Some(w) = weak.upgrade() {
+        w.set_vps_edit_id(peer.id as i32);
+        w.set_vps_form_name(peer.name.into());
+        w.set_vps_form_group(peer.group_name.into());
+        w.set_vps_form_endpoint(peer.endpoint.into());
+        w.set_vps_form_type(peer.db_type.as_str().into());
+        w.set_vps_form_remote_url(peer.remote_url.expose().into());
+        w.set_vps_form_key(peer.pairing_key.expose().into());
+        w.set_vps_form_fingerprint(fp.into());
+        w.set_vps_form_target_id(target_id);
+        w.set_vps_form_target_label(target_label.into());
+        w.set_vps_modal_open(true);
+    }
+}
+
+fn build_migrate_sources(st: &Arc<AppState>) -> Vec<(&'static str, u64, DbKind, String)> {
+    let mut out = Vec::new();
+    if let Ok(peers) = st.bridge_service.list_peers() {
+        for p in peers {
+            out.push((
+                "vps",
+                p.id,
+                p.db_type,
+                format!("VPS: {} ({})", p.name, p.db_type.as_str()),
+            ));
+        }
+    }
+    if let Ok(conns) = st.connection_service.list_filtered(None, None) {
+        for c in conns {
+            out.push((
+                "conn",
+                c.id,
+                c.db_type,
+                format!("{} ({})", c.name, c.db_type.as_str()),
+            ));
+        }
+    }
+    out
 }
 
 async fn handle_command(
@@ -947,16 +1213,26 @@ async fn handle_command(
             show_toast(weak, "Tool check complete".to_string(), ToastKind::Info);
         }
         AppCommand::FilterConnections { group, db_type } => {
-            let total = state
+            let all_conns = state
                 .connection_service
                 .list_filtered(None, None)
-                .map(|v| v.len())
-                .unwrap_or(0);
+                .unwrap_or_default();
+            let peers = state.bridge_service.list_peers().unwrap_or_default();
+            let total = all_conns.len() + peers.len();
             if let Ok(list) = state
                 .connection_service
                 .list_filtered(group.as_deref(), db_type)
             {
-                connections::push_connections(weak, list, total);
+                let filtered_peers = peers
+                    .into_iter()
+                    .filter(|p| {
+                        group
+                            .as_deref()
+                            .is_none_or(|g| p.group_name.eq_ignore_ascii_case(g))
+                            && db_type.is_none_or(|t| p.db_type == t)
+                    })
+                    .collect();
+                connections::push_connections(weak, list, filtered_peers, &all_conns, total);
             }
         }
         AppCommand::FilterBackups {
@@ -964,15 +1240,19 @@ async fn handle_command(
             db_type,
             status,
         } => {
+            let grouped = filters
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .bk_grouped_by_date;
             if let Ok(list) = state
                 .backup_service
                 .list_filtered(group.as_deref(), db_type, status)
             {
-                backups::push_backups(weak, list);
+                backups::push_backups(weak, list, grouped);
             }
         }
         AppCommand::BackupGroup { group_name } => {
-            match state.backup_service.backup_group(&group_name).await {
+            match state.bridge_service.backup_all_in_group(&group_name).await {
                 Ok(results) => {
                     let ok = results
                         .iter()
@@ -1197,15 +1477,13 @@ async fn handle_command(
             });
             refresh_all_views(&state, weak, filters).await;
         }
-        AppCommand::MigrateDbToDb {
-            source_conn_id,
-            dest_conn_id,
-        } => {
-            match state
-                .bridge_service
-                .migrate_db_to_db(source_conn_id, dest_conn_id)
-                .await
-            {
+        AppCommand::RevealBackup { backup_id } => {
+            if let Err(err) = state.backup_service.reveal_backup(backup_id) {
+                show_toast(weak, err.to_string(), ToastKind::Error);
+            }
+        }
+        AppCommand::MigrateEndpoints { source, dest } => {
+            match state.bridge_service.migrate_endpoints(source, dest).await {
                 Ok(res) => {
                     let weak_c = weak.clone();
                     let _ = slint::invoke_from_event_loop(move || {
@@ -1231,6 +1509,48 @@ async fn handle_command(
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = weak_c.upgrade() {
                             w.set_migrate_busy(false);
+                        }
+                    });
+                    show_toast(weak, err.to_string(), ToastKind::Error);
+                }
+            }
+        }
+        AppCommand::SetRunInBackground { enabled } => {
+            match state.settings_service.set_run_in_background(enabled) {
+                Ok(_) => {
+                    show_toast(
+                        weak,
+                        if enabled {
+                            "Background mode enabled — closing window keeps ChronoBase in tray"
+                                .to_string()
+                        } else {
+                            "Background mode disabled".to_string()
+                        },
+                        ToastKind::Info,
+                    );
+                    refresh_all_views(&state, weak, filters).await;
+                }
+                Err(err) => show_toast(weak, err.to_string(), ToastKind::Error),
+            }
+        }
+        AppCommand::SetRunOnStartup { enabled } => {
+            match state.settings_service.set_run_on_startup(enabled) {
+                Ok(_) => {
+                    show_toast(
+                        weak,
+                        if enabled {
+                            "ChronoBase will start in tray on OS login".to_string()
+                        } else {
+                            "OS startup disabled".to_string()
+                        },
+                        ToastKind::Info,
+                    );
+                }
+                Err(err) => {
+                    let weak_c = weak.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = weak_c.upgrade() {
+                            w.set_startup_enabled(!enabled);
                         }
                     });
                     show_toast(weak, err.to_string(), ToastKind::Error);
@@ -1330,23 +1650,43 @@ async fn refresh_all_views(
     filters: &Arc<Mutex<FilterState>>,
 ) {
     let f = filters.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    let tools = state.tool_discovery.status().await;
+    let settings = state.settings_service.get();
     let stats = DashboardStats::from_store(&state.store);
     let all_backups = state
         .backup_service
         .list_filtered(None, None, None)
         .unwrap_or_default();
-    dashboard::push_dashboard(weak, stats, all_backups);
+    dashboard::push_dashboard(
+        weak,
+        stats,
+        all_backups,
+        &tools,
+        state.store.data_dir(),
+        &settings,
+    );
 
     let all_conns = state
         .connection_service
         .list_filtered(None, None)
         .unwrap_or_default();
-    let total_conns = all_conns.len();
+    let all_peers = state.bridge_service.list_peers().unwrap_or_default();
+    let total_targets = all_conns.len() + all_peers.len();
     if let Ok(conns) = state
         .connection_service
         .list_filtered(f.conn_group.as_deref(), f.conn_type)
     {
-        connections::push_connections(weak, conns, total_conns);
+        let filtered_peers = all_peers
+            .iter()
+            .filter(|p| {
+                f.conn_group
+                    .as_deref()
+                    .is_none_or(|g| p.group_name.eq_ignore_ascii_case(g))
+                    && f.conn_type.is_none_or(|t| p.db_type == t)
+            })
+            .cloned()
+            .collect();
+        connections::push_connections(weak, conns, filtered_peers, &all_conns, total_targets);
     }
 
     if let Ok(bks) =
@@ -1354,18 +1694,14 @@ async fn refresh_all_views(
             .backup_service
             .list_filtered(f.bk_group.as_deref(), f.bk_type, f.bk_status)
     {
-        backups::push_backups(weak, bks);
+        backups::push_backups(weak, bks, f.bk_grouped_by_date);
     }
 
     if let Ok(scheds) = state.schedule_service.list() {
         schedules::push_schedules(weak, scheds);
     }
 
-    if let Ok(peers) = state.bridge_service.list_peers() {
-        bridge::push_vps_peers(weak, peers, &all_conns);
-    }
-
-    let tools = state.tool_discovery.status().await;
+    bridge::push_vps_peers(weak, all_peers, &all_conns);
     setup::push_tools(weak, tools);
 }
 

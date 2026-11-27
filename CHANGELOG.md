@@ -5,6 +5,18 @@ All notable changes to ChronoBase will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-27
+
+### Added
+- **Unified Connections & VPS Groups (`group_name`):** Assign a `group_name` to every remote VPS peer, view and manage both Direct Connections and VPS Peers together under **Connections**, and run `ScheduleRunner` cron jobs, GUI `Back up all` / `Back up group`, and `chronobase backup` across both direct databases and VPS peers in the same group.
+- **Version-Safe One-Click Migration (`VPS -> Local DB` & `DB -> DB`):** Migrate straight from any saved **VPS Peer** into a local database (or between any two direct connections) without hitting `"Add at least two connections"`, with preflight engine and PostgreSQL major-version checks before restore.
+- **Background Tray Engine & OS Login Startup:** Prominent sidebar **Run in background** and **Run on OS startup** (`--tray` / `--minimized`) toggles powered by Slint's native `SystemTrayIcon` (`Shell_NotifyIconW` on Windows, `NSStatusItem` on macOS, pure-Rust `ksni` D-Bus on Linux), Windows `HKCU\...\Run` Registry, macOS `LaunchAgents`, and Linux XDG autostart. Closing the window hides to tray while keeping cron schedules live.
+- **Expandable Dashboard Breakdown:** 4 KPI columns (Local + VPS targets, Success/Fail %, Direct vs VPS storage, Next Scheduled Cron Run), collapsible **Group & Storage Breakdown** with one-click per-group backup, collapsible **Tooling & Environment Health** with parsed CLI versions, and click-to-expand **Recent Snapshot Details** drawer with **Open Folder** and **Restore**.
+- **Group + Date Backup History & Folder Reveal:** Snapshots are stored under `backups/<GroupSlug>/<YYYY-MM-DD>/`, grouped by **Group & Date** (`Today`, `Yesterday`, `YYYY-MM-DD`) in **Backups**, and include a **Folder** reveal button on every valid row (verified against canonical `backups/` containment before opening Explorer / Finder / `xdg-open`).
+
+### Fixed
+- **Long URL & Pairing Key Overflow:** Added `clip: true`, `min-width: 0px`, and elided placeholders to `FormField`, `CopyableCommand`, and backup error strips so long PostgreSQL/MongoDB URLs and 256-bit pairing keys stay cleanly inside input borders.
+
 ## [0.2.1] - 2026-11-27
 
 ### Fixed

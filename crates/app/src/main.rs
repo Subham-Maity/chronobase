@@ -22,7 +22,9 @@ use chronobase_core::store::JsonStore;
 use crate::bootstrap::AppState;
 
 enum CliAction {
-    Gui,
+    Gui {
+        start_in_tray: bool,
+    },
     Headless,
     Agent {
         bind: Option<String>,
@@ -51,6 +53,7 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut data_dir: Option<PathBuf> = None;
     let mut positional: Vec<String> = Vec::new();
     let mut headless = false;
+    let mut start_in_tray = false;
     let mut agent = false;
     let mut bind: Option<String> = None;
     let mut allow_ips: Vec<String> = Vec::new();
@@ -72,6 +75,7 @@ fn parse_args() -> Result<CliArgs, String> {
                 });
             }
             "--headless" => headless = true,
+            "--tray" | "--minimized" => start_in_tray = true,
             "--agent" => agent = true,
             "--bind" => {
                 let val = args
@@ -132,7 +136,7 @@ fn parse_args() -> Result<CliArgs, String> {
             other => return Err(format!("Unknown command: {other}")),
         }
     } else {
-        CliAction::Gui
+        CliAction::Gui { start_in_tray }
     };
 
     Ok(CliArgs { data_dir, action })
@@ -177,6 +181,7 @@ fn print_help() {
            pull <vps-name-or-id>    Pull a verified encrypted backup from a configured VPS peer\n\n\
          OPTIONS:\n  \
            --headless               Run background scheduler without GUI\n  \
+           --tray                   Start GUI minimized to system tray\n  \
            --agent                  Run the secure VPS Pull Agent TCP server\n  \
            --bind <host:port>       Override VPS agent listen address (default: {DEFAULT_AGENT_BIND})\n  \
            --allow-ip <ip>          Allowlist client IP for --agent (repeatable)\n  \
@@ -264,7 +269,7 @@ fn run_cli_backup(state: Arc<AppState>, group: &str) -> ExitCode {
     };
 
     let results: Result<Vec<BackupRunResult>, _> =
-        rt.block_on(state.backup_service.backup_group(group));
+        rt.block_on(state.bridge_service.backup_all_in_group(group));
     if let Err(e) = state.store.flush_now() {
         eprintln!("Warning: failed to flush store: {e}");
     }
@@ -504,7 +509,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let is_gui = matches!(parsed.action, CliAction::Gui);
+    let is_gui = matches!(parsed.action, CliAction::Gui { .. });
     attach_parent_console_if_needed(is_gui);
     init_tracing();
 
@@ -552,7 +557,7 @@ fn main() -> ExitCode {
         CliAction::BackupAll => run_cli_backup(state, ALL_GROUPS),
         CliAction::BackupGroup(group) => run_cli_backup(state, &group),
         CliAction::Headless => run_headless(state),
-        CliAction::Gui => ui::run_gui(state),
+        CliAction::Gui { start_in_tray } => ui::run_gui(state, start_in_tray),
         CliAction::Help
         | CliAction::Version
         | CliAction::AgentInit { .. }

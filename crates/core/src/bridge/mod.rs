@@ -16,8 +16,8 @@ pub use agent::{
 pub use crypto::{generate_pairing_key, key_fingerprint};
 pub use error::BridgeError;
 pub use model::{
-    AgentConfig, CreateVpsPeerInput, MigrateResult, PullResult, PullTargetMode, UpdateVpsPeerInput,
-    VpsPeer,
+    AgentConfig, CreateVpsPeerInput, MigrateEndpoint, MigrateResult, PullResult, PullTargetMode,
+    UpdateVpsPeerInput, VpsPeer,
 };
 pub use repository::{StoreVpsPeerRepository, VpsPeerRepository};
 pub use service::{BridgeService, DefaultBridgeService};

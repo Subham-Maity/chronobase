@@ -45,6 +45,7 @@ pub struct DownloadedDump {
 /// the VPS agent to delete its temporary staging files.
 pub async fn pull_remote_dump(
     backups_dir: &Path,
+    group_name: &str,
     peer_name: &str,
     endpoint: &str,
     db_type: DbKind,
@@ -104,25 +105,27 @@ pub async fn pull_remote_dump(
     .await
     .map_err(|_| BridgeError::TimedOut(CONNECT_TIMEOUT.as_secs()))??;
 
-    // Prepare local destination under backups/VPS_<PeerSlug>/
-    let group_slug = format!("VPS_{}", slugify(peer_name));
+    // Prepare local destination under backups/<GroupSlug>/<YYYY-MM-DD>/
+    let group_slug = slugify(group_name);
     let name_slug = slugify(peer_name);
-    let stamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let now = Local::now();
+    let date_folder = now.format("%Y-%m-%d").to_string();
+    let stamp = now.format("%Y%m%d_%H%M%S").to_string();
     let base_name = format!("{name_slug}_{stamp}");
-    let group_dir = backups_dir.join(&group_slug);
-    fs::create_dir_all(&group_dir)?;
+    let target_dir = backups_dir.join(&group_slug).join(&date_folder);
+    fs::create_dir_all(&target_dir)?;
 
     let (rel_path, full_path) = match db_type {
         DbKind::Postgres => {
             let file_name = format!("{base_name}.sql");
             (
-                format!("{group_slug}/{file_name}"),
-                group_dir.join(file_name),
+                format!("{group_slug}/{date_folder}/{file_name}"),
+                target_dir.join(file_name),
             )
         }
         DbKind::Mongodb => (
-            format!("{group_slug}/{base_name}"),
-            group_dir.join(base_name),
+            format!("{group_slug}/{date_folder}/{base_name}"),
+            target_dir.join(base_name),
         ),
     };
 

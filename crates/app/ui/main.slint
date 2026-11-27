@@ -6,7 +6,7 @@ import { NavItem, ToolPill } from "./components/nav_item.slint";
 import { PrimaryButton, GhostButton, DangerConfirmButton } from "./components/buttons.slint";
 import { FormField, Chip, CycleButton } from "./components/form_field.slint";
 import { ModalOverlay, ConfirmDialog, ToastMessage, ToastBanner } from "./components/modal.slint";
-import { DashboardPage, RecentBackupRow } from "./pages/dashboard.slint";
+import { DashboardPage, RecentBackupRow, GroupBreakdownRow, ToolDetailRow } from "./pages/dashboard.slint";
 import { ConnectionsPage, ConnectionRow } from "./pages/connections.slint";
 import { BackupsPage, BackupRow } from "./pages/backups.slint";
 import { SchedulesPage, ScheduleRow } from "./pages/schedules.slint";
@@ -14,8 +14,9 @@ import { BridgePage, VpsPeerRow } from "./pages/bridge.slint";
 import { SetupPage } from "./pages/setup.slint";
 import { DangerPage } from "./pages/danger.slint";
 import { PageGuideModal } from "./components/page_guide.slint";
+import { AppTray } from "./tray.slint";
 
-export { RecentBackupRow, ConnectionRow, BackupRow, ScheduleRow, VpsPeerRow, ToastMessage }
+export { AppTray, RecentBackupRow, GroupBreakdownRow, ToolDetailRow, ConnectionRow, BackupRow, ScheduleRow, VpsPeerRow, ToastMessage }
 
 export component MainWindow inherits Window {
     title: "ChronoBase";
@@ -38,13 +39,25 @@ export component MainWindow inherits Window {
 
     // Dashboard
     in property <string> stat-conns: "0";
+    in property <string> stat-targets-detail: "0 local · 0 VPS";
     in property <string> stat-backups: "0";
     in property <string> stat-rate: "no backups yet";
     in property <string> stat-size: "0 B";
+    in property <string> stat-size-detail: "Direct 0 B · VPS 0 B";
     in property <string> stat-last: "—";
     in property <string> stat-scheds: "0 active schedules";
+    in property <string> stat-next-cron: "No active cron";
+    in property <string> stat-next-cron-detail: "Create a schedule to automate";
+    in property <string> dash-data-dir: "";
+    in property <string> dash-bg-status: "Foreground only";
     in property <bool> backup-all-busy: false;
     in property <[RecentBackupRow]> recent-rows: [];
+    in property <[GroupBreakdownRow]> dash-group-rows: [];
+    in property <[ToolDetailRow]> dash-tool-rows: [];
+
+    // Background engine & OS startup
+    in-out property <bool> bg-run-enabled: false;
+    in-out property <bool> startup-enabled: false;
 
     // Connections
     in property <[ConnectionRow]> connection-rows: [];
@@ -57,6 +70,7 @@ export component MainWindow inherits Window {
     in property <string> bk-group-filter-label: "All Groups";
     in property <string> bk-type-filter-label: "All Types";
     in property <string> bk-status-filter-label: "All Status";
+    in-out property <bool> bk-grouped-by-date: true;
 
     // Schedules
     in property <[ScheduleRow]> schedule-rows: [];
@@ -85,6 +99,7 @@ export component MainWindow inherits Window {
     in-out property <bool> vps-modal-open: false;
     in-out property <int> vps-edit-id: -1;
     in-out property <string> vps-form-name: "";
+    in-out property <string> vps-form-group: "Default";
     in-out property <string> vps-form-endpoint: "";
     in-out property <string> vps-form-type: "postgres";
     in-out property <string> vps-form-remote-url: "";
@@ -95,6 +110,7 @@ export component MainWindow inherits Window {
 
     // DB-to-DB Migrate Modal state
     in-out property <bool> migrate-modal-open: false;
+    in-out property <string> migrate-src-kind: "conn";
     in-out property <int> migrate-src-id: 0;
     in-out property <string> migrate-src-label: "";
     in-out property <int> migrate-dst-id: 0;
@@ -144,19 +160,24 @@ export component MainWindow inherits Window {
     // Callbacks
     callback navigate(string);
     callback backup-all();
+    callback backup-group-named(string);
+    callback toggle-run-in-background(bool);
+    callback toggle-run-on-startup(bool);
     callback cycle-conn-group-filter();
     callback cycle-conn-type-filter();
     callback backup-group();
-    callback backup-connection(int);
+    callback backup-one-entry(string, int);
     callback open-add-connection();
-    callback open-edit-connection(int);
+    callback edit-one-entry(string, int);
     callback save-connection(int, string, string, string, string, string);
     callback request-wipe-connection(int);
-    callback request-delete-connection(int);
+    callback delete-one-entry(string, int);
 
     callback cycle-bk-group-filter();
     callback cycle-bk-type-filter();
     callback cycle-bk-status-filter();
+    callback toggle-bk-grouped-view(bool);
+    callback reveal-backup(int);
     callback open-restore-modal(int);
     callback submit-restore(int, string, string);
     callback request-delete-backup(int);
@@ -175,7 +196,7 @@ export component MainWindow inherits Window {
     callback generate-vps-key();
     callback preview-vps-fingerprint(string);
     callback cycle-vps-target();
-    callback save-vps-peer(int, string, string, string, string, string, int);
+    callback save-vps-peer(int, string, string, string, string, string, string, int);
     callback pull-vps-peer(int);
     callback request-delete-vps-peer(int);
     callback open-migrate-modal();
@@ -331,6 +352,122 @@ export component MainWindow inherits Window {
                     }
                 }
 
+                // Background Engine & OS Startup Card
+                Rectangle {
+                    border-width: 1px;
+                    border-color: Palette.line;
+                    VerticalLayout {
+                        padding-left: Space.s12;
+                        padding-right: Space.s12;
+                        padding-top: Space.s12;
+                        padding-bottom: Space.s12;
+                        spacing: 8px;
+
+                        Rectangle {
+                            height: 44px;
+                            border-radius: Palette.r-md;
+                            background: bg-run-enabled ? Palette.ok-dim : Palette.tier-raised;
+                            border-width: 1px;
+                            border-color: bg-run-enabled ? Palette.ok-border : Palette.line-strong;
+
+                            bg-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    bg-run-enabled = !bg-run-enabled;
+                                    root.toggle-run-in-background(bg-run-enabled);
+                                }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                spacing: 8px;
+                                alignment: space-between;
+
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Rectangle {
+                                        width: 8px;
+                                        height: 8px;
+                                        border-radius: 4px;
+                                        y: (parent.height - self.height) / 2;
+                                        background: bg-run-enabled ? Palette.ok : Palette.ink-3;
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Run in background";
+                                            font-family: Palette.font-ui;
+                                            font-size: Type.secondary;
+                                            font-weight: 600;
+                                            color: Palette.ink-1;
+                                        }
+                                        Text {
+                                            text: bg-run-enabled ? "Tray active · Cron live" : "Off · Quits on close";
+                                            font-family: Palette.font-ui;
+                                            font-size: Type.min-label;
+                                            color: bg-run-enabled ? Palette.ok : Palette.ink-3;
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    width: 32px;
+                                    height: 18px;
+                                    border-radius: 9px;
+                                    y: (parent.height - self.height) / 2;
+                                    background: bg-run-enabled ? Palette.ok : Palette.line-strong;
+                                    Rectangle {
+                                        width: 14px;
+                                        height: 14px;
+                                        border-radius: 7px;
+                                        y: 2px;
+                                        x: bg-run-enabled ? 16px : 2px;
+                                        background: #FFFFFF;
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            height: 28px;
+                            border-radius: Palette.r-sm;
+                            background: startup-touch.has-hover ? Palette.tier-hover : transparent;
+                            border-width: 1px;
+                            border-color: startup-enabled ? Palette.signal : Palette.line;
+
+                            startup-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    startup-enabled = !startup-enabled;
+                                    root.toggle-run-on-startup(startup-enabled);
+                                }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                alignment: space-between;
+                                Text {
+                                    text: "Run on OS startup";
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.min-label;
+                                    color: Palette.ink-2;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: startup-enabled ? "ON" : "OFF";
+                                    font-family: Palette.font-mono;
+                                    font-size: Type.min-label;
+                                    font-weight: 600;
+                                    color: startup-enabled ? Palette.signal : Palette.ink-3;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Tool status pills
                 Rectangle {
                     border-width: 1px;
@@ -357,15 +494,26 @@ export component MainWindow inherits Window {
 
             if active-page == "dashboard": DashboardPage {
                 stat-conns: root.stat-conns;
+                stat-targets-detail: root.stat-targets-detail;
                 stat-backups: root.stat-backups;
                 stat-rate: root.stat-rate;
                 stat-size: root.stat-size;
+                stat-size-detail: root.stat-size-detail;
                 stat-last: root.stat-last;
                 stat-scheds: root.stat-scheds;
+                stat-next-cron: root.stat-next-cron;
+                stat-next-cron-detail: root.stat-next-cron-detail;
+                dash-data-dir: root.dash-data-dir;
+                dash-bg-status: root.dash-bg-status;
                 backup-all-busy: root.backup-all-busy;
                 recent-rows: root.recent-rows;
+                group-rows: root.dash-group-rows;
+                tool-rows: root.dash-tool-rows;
                 open-guide => { root.open-page-guide("dashboard"); }
                 backup-all => { root.backup-all(); }
+                backup-group-now(g) => { root.backup-group-named(g); }
+                reveal-backup(id) => { root.reveal-backup(id); }
+                open-restore(id) => { root.open-restore-modal(id); }
                 navigate(p) => { active-page = p; root.navigate(p); }
             }
 
@@ -376,13 +524,14 @@ export component MainWindow inherits Window {
                 backup-group-busy: root.backup-group-busy;
                 open-guide => { root.open-page-guide("connections"); }
                 add-connection => { root.open-add-connection(); }
+                add-vps => { root.open-add-vps(); }
                 cycle-group-filter => { root.cycle-conn-group-filter(); }
                 cycle-type-filter => { root.cycle-conn-type-filter(); }
                 backup-group => { root.backup-group(); }
-                backup-one(id) => { root.backup-connection(id); }
-                edit-one(id) => { root.open-edit-connection(id); }
+                backup-one(origin, id) => { root.backup-one-entry(origin, id); }
+                edit-one(origin, id) => { root.edit-one-entry(origin, id); }
                 wipe-one(id) => { root.request-wipe-connection(id); }
-                delete-one(id) => { root.request-delete-connection(id); }
+                delete-one(origin, id) => { root.delete-one-entry(origin, id); }
             }
 
             if active-page == "backups": BackupsPage {
@@ -390,10 +539,13 @@ export component MainWindow inherits Window {
                 group-filter-label: root.bk-group-filter-label;
                 type-filter-label: root.bk-type-filter-label;
                 status-filter-label: root.bk-status-filter-label;
+                grouped-by-date <=> root.bk-grouped-by-date;
                 open-guide => { root.open-page-guide("backups"); }
                 cycle-group-filter => { root.cycle-bk-group-filter(); }
                 cycle-type-filter => { root.cycle-bk-type-filter(); }
                 cycle-status-filter => { root.cycle-bk-status-filter(); }
+                toggle-grouped-view(on) => { root.toggle-bk-grouped-view(on); }
+                reveal-backup(id) => { root.reveal-backup(id); }
                 open-restore(id) => { root.open-restore-modal(id); }
                 delete-backup(id) => { root.request-delete-backup(id); }
             }
@@ -953,6 +1105,12 @@ export component MainWindow inherits Window {
                     placeholder: "Prod Hetzner VPS";
                 }
                 FormField {
+                    width: 130px;
+                    label: "Group";
+                    value <=> vps-form-group;
+                    placeholder: "Default";
+                }
+                FormField {
                     horizontal-stretch: 1;
                     label: "Agent endpoint (host:port)";
                     value <=> vps-form-endpoint;
@@ -1089,6 +1247,7 @@ export component MainWindow inherits Window {
                         root.save-vps-peer(
                             vps-edit-id,
                             vps-form-name,
+                            vps-form-group,
                             vps-form-endpoint,
                             vps-form-type,
                             vps-form-remote-url,
@@ -1167,7 +1326,7 @@ export component MainWindow inherits Window {
                     width: parent.width;
                     padding: 12px;
                     Text {
-                        text: "Both connections must share the same engine (PostgreSQL -> PostgreSQL or MongoDB -> MongoDB). Destination data is replaced.";
+                        text: "Supports VPS Peer -> Local DB or Direct DB -> Direct DB. Both endpoints must match engine & PostgreSQL major version (verified before restore).";
                         font-family: Palette.font-ui;
                         font-size: Type.min-label;
                         color: Palette.ink-2;

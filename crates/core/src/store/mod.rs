@@ -7,4 +7,4 @@
 
 pub mod json_store;
 
-pub use json_store::{JsonStore, Seq, StoreData, StoreError, local_timestamp};
+pub use json_store::{AppSettings, JsonStore, Seq, StoreData, StoreError, local_timestamp};

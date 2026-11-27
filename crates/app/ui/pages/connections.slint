@@ -1,5 +1,4 @@
-// Connections page — "Grouped Ledger" with inline group headings,
-// responsive column collapse (< 820px content width), and quiet icon actions.
+// Connections page — Unified Grouped Ledger for Direct Connections and VPS Pull Peers
 
 import { ScrollView } from "std-widgets.slint";
 import { Palette, Type, Space } from "../theme.slint";
@@ -12,10 +11,13 @@ import { PageInfoButton } from "../components/page_guide.slint";
 
 export struct ConnectionRow {
     id: int,
+    origin: string,
     name: string,
     group-name: string,
     db-type: string,
     masked-url: string,
+    endpoint: string,
+    target-label: string,
 }
 
 export component ConnectionsPage inherits VerticalLayout {
@@ -26,13 +28,14 @@ export component ConnectionsPage inherits VerticalLayout {
 
     callback open-guide();
     callback add-connection();
+    callback add-vps();
     callback cycle-group-filter();
     callback cycle-type-filter();
     callback backup-group();
-    callback backup-one(int);
-    callback edit-one(int);
+    callback backup-one(string, int);
+    callback edit-one(string, int);
     callback wipe-one(int);
-    callback delete-one(int);
+    callback delete-one(string, int);
 
     property <bool> compact: root.width < 820px;
 
@@ -68,18 +71,31 @@ export component ConnectionsPage inherits VerticalLayout {
                 }
             }
             Text {
-                text: "PostgreSQL and MongoDB targets organised by group";
+                text: "Direct databases and encrypted VPS Pull targets organised by group for cron schedules";
                 font-family: Palette.font-ui;
                 font-size: Type.secondary;
                 color: Palette.ink-3;
+                wrap: word-wrap;
             }
         }
-        VerticalLayout {
-            alignment: center;
-            PrimaryButton {
-                text: "Add connection";
-                icon-path: Icons.plus;
-                clicked => { root.add-connection(); }
+        HorizontalLayout {
+            horizontal-stretch: 0;
+            spacing: Space.s8;
+            VerticalLayout {
+                alignment: center;
+                GhostButton {
+                    text: "Add VPS";
+                    icon-path: Icons.download;
+                    clicked => { root.add-vps(); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                PrimaryButton {
+                    text: "Add connection";
+                    icon-path: Icons.plus;
+                    clicked => { root.add-connection(); }
+                }
             }
         }
     }
@@ -125,7 +141,7 @@ export component ConnectionsPage inherits VerticalLayout {
                 horizontal-alignment: center;
             }
             Text {
-                text: "Add a PostgreSQL or MongoDB connection URL to begin.";
+                text: "Add a PostgreSQL/MongoDB connection URL or a VPS Pull peer to begin.";
                 font-family: Palette.font-ui;
                 font-size: Type.secondary;
                 color: Palette.ink-3;
@@ -133,16 +149,21 @@ export component ConnectionsPage inherits VerticalLayout {
             }
             HorizontalLayout {
                 alignment: center;
+                spacing: Space.s12;
                 PrimaryButton {
                     text: "Add connection";
                     icon-path: Icons.plus;
                     clicked => { root.add-connection(); }
                 }
+                GhostButton {
+                    text: "Add VPS";
+                    icon-path: Icons.download;
+                    clicked => { root.add-vps(); }
+                }
             }
         }
 
         if rows.length > 0: VerticalLayout {
-            // Shared column header
             Rectangle {
                 height: 38px;
                 background: Palette.tier-base;
@@ -153,8 +174,8 @@ export component ConnectionsPage inherits VerticalLayout {
                     padding-right: Space.s16;
                     spacing: Space.s12;
                     Text { text: "Database"; horizontal-stretch: 2; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
-                    Text { text: "Engine"; width: 112px; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
-                    if !compact: Text { text: "Connection URL"; horizontal-stretch: 3; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    Text { text: "Source & Engine"; width: 176px; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
+                    if !compact: Text { text: "Connection / Endpoint URL"; horizontal-stretch: 3; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
                     Text { text: "Actions"; width: 248px; font-family: Palette.font-ui; font-size: Type.min-label; font-weight: 500; color: Palette.ink-3; vertical-alignment: center; }
                 }
             }
@@ -165,7 +186,6 @@ export component ConnectionsPage inherits VerticalLayout {
                     alignment: start;
 
                     for row[idx] in rows: VerticalLayout {
-                        // Inline group heading whenever group-name changes
                         if idx == 0 || row.group-name != rows[idx - 1].group-name: Rectangle {
                             height: 32px;
                             background: Palette.tier-raised;
@@ -195,20 +215,39 @@ export component ConnectionsPage inherits VerticalLayout {
                                 padding-right: Space.s16;
                                 spacing: Space.s12;
 
-                                Text {
-                                    text: row.name;
+                                VerticalLayout {
                                     horizontal-stretch: 2;
-                                    font-family: Palette.font-ui;
-                                    font-size: Type.body;
-                                    font-weight: 500;
-                                    color: Palette.ink-1;
-                                    vertical-alignment: center;
-                                    overflow: elide;
+                                    min-width: 0px;
+                                    alignment: center;
+                                    spacing: 1px;
+                                    Text {
+                                        text: row.name;
+                                        font-family: Palette.font-ui;
+                                        font-size: Type.body;
+                                        font-weight: 500;
+                                        color: Palette.ink-1;
+                                        overflow: elide;
+                                    }
+                                    if row.origin == "vps": Text {
+                                        text: row.target-label;
+                                        font-family: Palette.font-ui;
+                                        font-size: 11px;
+                                        color: Palette.signal;
+                                        overflow: elide;
+                                    }
                                 }
 
                                 HorizontalLayout {
-                                    width: 112px;
+                                    width: 176px;
                                     alignment: start;
+                                    spacing: 6px;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Badge {
+                                            text: row.origin == "vps" ? "VPS" : "Direct";
+                                            variant: row.origin == "vps" ? "group" : "success";
+                                        }
+                                    }
                                     VerticalLayout {
                                         alignment: center;
                                         Badge {
@@ -221,6 +260,7 @@ export component ConnectionsPage inherits VerticalLayout {
                                 if !compact: Text {
                                     text: row.masked-url;
                                     horizontal-stretch: 3;
+                                    min-width: 0px;
                                     font-family: Palette.font-mono;
                                     font-size: Type.min-label;
                                     color: Palette.ink-3;
@@ -230,17 +270,18 @@ export component ConnectionsPage inherits VerticalLayout {
 
                                 HorizontalLayout {
                                     width: 248px;
+                                    horizontal-stretch: 0;
                                     spacing: 6px;
                                     alignment: end;
 
                                     VerticalLayout {
                                         alignment: center;
                                         PrimaryButton {
-                                            text: "Back up";
-                                            icon-path: Icons.bolt;
+                                            text: row.origin == "vps" ? "Pull" : "Back up";
+                                            icon-path: row.origin == "vps" ? Icons.download : Icons.bolt;
                                             small: true;
                                             a11y-label: "Back up " + row.name;
-                                            clicked => { root.backup-one(row.id); }
+                                            clicked => { root.backup-one(row.origin, row.id); }
                                         }
                                     }
                                     VerticalLayout {
@@ -249,10 +290,10 @@ export component ConnectionsPage inherits VerticalLayout {
                                             icon-path: Icons.edit;
                                             small: true;
                                             a11y-label: "Edit " + row.name;
-                                            clicked => { root.edit-one(row.id); }
+                                            clicked => { root.edit-one(row.origin, row.id); }
                                         }
                                     }
-                                    VerticalLayout {
+                                    if row.origin == "direct": VerticalLayout {
                                         alignment: center;
                                         WipeButton {
                                             text: "Wipe";
@@ -266,7 +307,7 @@ export component ConnectionsPage inherits VerticalLayout {
                                             icon-path: Icons.trash;
                                             small: true;
                                             a11y-label: "Delete " + row.name;
-                                            clicked => { root.delete-one(row.id); }
+                                            clicked => { root.delete-one(row.origin, row.id); }
                                         }
                                     }
                                 }

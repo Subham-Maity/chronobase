@@ -13,11 +13,12 @@ use crate::backup::engine::{
     build_pg_dump_spec, build_psql_restore_spec, build_psql_wipe_spec, is_config_flag_unsupported,
 };
 use crate::backup::{
-    BackupEntry, BackupError, BackupRepository, BackupRunResult, BackupStatus, RecordBackupInput,
-    RestoreTarget,
+    BackupEntry, BackupError, BackupRepository, BackupRunResult, BackupSourceKind, BackupStatus,
+    RecordBackupInput, RestoreTarget,
 };
 use crate::connection::{Connection, ConnectionRepository, DbKind};
 use crate::constant::{BACKUP_TIMEOUT, WIPE_TIMEOUT};
+use crate::platform;
 use crate::slug::slugify;
 use crate::store::JsonStore;
 use crate::tools::ToolDiscovery;
@@ -59,6 +60,10 @@ pub trait BackupService: Send + Sync {
 
     /// Deletes a backup record and its artifact on disk (after path-containment check).
     fn delete_backup(&self, backup_id: u64) -> Result<(), BackupError>;
+
+    /// Opens the OS file manager highlighting the snapshot artifact on disk
+    /// (enforces canonical `backups/` path containment).
+    fn reveal_backup(&self, backup_id: u64) -> Result<(), BackupError>;
 }
 
 /// Default [`BackupService`] wiring repositories, [`ToolDiscovery`], and [`CommandRunner`].
@@ -98,6 +103,7 @@ impl DefaultBackupService {
                         connection_name: conn.name.clone(),
                         group_name: conn.group_name.clone(),
                         db_type: conn.db_type,
+                        source_kind: BackupSourceKind::Direct,
                         file_path: rel_path,
                         file_size: size,
                         status: BackupStatus::Success,
@@ -126,6 +132,7 @@ impl DefaultBackupService {
                         connection_name: conn.name.clone(),
                         group_name: conn.group_name.clone(),
                         db_type: conn.db_type,
+                        source_kind: BackupSourceKind::Direct,
                         file_path: String::new(),
                         file_size: 0,
                         status: BackupStatus::Failed,
@@ -144,11 +151,17 @@ impl DefaultBackupService {
     async fn execute_backup(&self, conn: &Connection) -> Result<(String, u64), BackupError> {
         let group_slug = slugify(&conn.group_name);
         let name_slug = slugify(&conn.name);
-        let stamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+        let now = Local::now();
+        let date_folder = now.format("%Y-%m-%d").to_string();
+        let stamp = now.format("%Y%m%d_%H%M%S").to_string();
         let base_name = format!("{name_slug}_{stamp}");
 
-        let group_dir = self.store.backups_dir().join(&group_slug);
-        fs::create_dir_all(&group_dir)?;
+        let target_dir = self
+            .store
+            .backups_dir()
+            .join(&group_slug)
+            .join(&date_folder);
+        fs::create_dir_all(&target_dir)?;
 
         let tool_status = self.tools.status().await;
 
@@ -158,7 +171,7 @@ impl DefaultBackupService {
                     .pg_dump
                     .ok_or(BackupError::ToolMissing { tool: "pg_dump" })?;
                 let file_name = format!("{base_name}.sql");
-                let full_path = group_dir.join(&file_name);
+                let full_path = target_dir.join(&file_name);
                 let spec = build_pg_dump_spec(bin, conn.url.expose(), &full_path, BACKUP_TIMEOUT)?;
                 let out = self.runner.run(spec).await?;
                 if !out.success {
@@ -170,14 +183,14 @@ impl DefaultBackupService {
                     )));
                 }
                 let size = path_size(&full_path);
-                let rel_path = format!("{group_slug}/{file_name}");
+                let rel_path = format!("{group_slug}/{date_folder}/{file_name}");
                 Ok((rel_path, size))
             }
             DbKind::Mongodb => {
                 let bin = tool_status
                     .mongodump
                     .ok_or(BackupError::ToolMissing { tool: "mongodump" })?;
-                let full_dir = group_dir.join(&base_name);
+                let full_dir = target_dir.join(&base_name);
                 let yaml_cfg = format!("uri: \"{}\"\n", escape_yaml(conn.url.expose()));
                 let cfg_file = TempSecretFile::create(
                     self.store.data_dir(),
@@ -214,7 +227,7 @@ impl DefaultBackupService {
                     )));
                 }
                 let size = path_size(&full_dir);
-                let rel_path = format!("{group_slug}/{base_name}");
+                let rel_path = format!("{group_slug}/{date_folder}/{base_name}");
                 Ok((rel_path, size))
             }
         }
@@ -491,6 +504,28 @@ impl BackupService for DefaultBackupService {
         tracing::info!(backup_id, "backup deleted");
         Ok(())
     }
+
+    fn reveal_backup(&self, backup_id: u64) -> Result<(), BackupError> {
+        let entry = self
+            .backup_repo
+            .find_by_id(backup_id)?
+            .ok_or(BackupError::NotFound(backup_id))?;
+
+        if entry.file_path.trim().is_empty() {
+            return Err(BackupError::Store(
+                crate::store::StoreError::InvalidBackupPath,
+            ));
+        }
+
+        // Security: enforce canonicalized backups/ containment before invoking OS file manager.
+        let safe_path = self.store.resolve_backup_path_checked(&entry.file_path)?;
+        if !safe_path.exists() {
+            return Err(BackupError::FileMissingOnDisk);
+        }
+
+        platform::reveal_in_file_manager(&safe_path)?;
+        Ok(())
+    }
 }
 
 fn failed_placeholder(conn: &Connection, msg: String) -> BackupEntry {
@@ -500,6 +535,7 @@ fn failed_placeholder(conn: &Connection, msg: String) -> BackupEntry {
         connection_name: conn.name.clone(),
         group_name: conn.group_name.clone(),
         db_type: conn.db_type,
+        source_kind: BackupSourceKind::Direct,
         file_path: String::new(),
         file_size: 0,
         status: BackupStatus::Failed,

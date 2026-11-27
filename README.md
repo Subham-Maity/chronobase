@@ -56,10 +56,10 @@ The original [ChronoBase v1 (`d695de05d8e5966a39b9e0b37e612e182ab9eb48`)](https:
 | | |
 |---|---|
 | <img src="assets/icons/zap.svg" width="16" height="16" align="absmiddle" alt="" /> **Zero Cloud, Zero Telemetry** | All connection URLs, `.sql` dumps, MongoDB BSON directories, VPS peer keys, and schedules stay 100% under your control. |
-| <img src="assets/icons/layers.svg" width="16" height="16" align="absmiddle" alt="" /> **Strata Stone-Glass Native UI** | Built with **Slint 1.19** (`Geist` & `Geist Mono`), virtualized 500-row `ListView` history, and per-tab **`(i)` Setup Guides**. |
-| <img src="assets/icons/shield.svg" width="16" height="16" align="absmiddle" alt="" /> **Hardened Against Leaks & Traversal** | Passwords never enter `argv` or logs; snapshot deletion checks canonicalized paths; VPS transfers use mutual HMAC-SHA256 + `ChaCha20-Poly1305` + SHA-256 checksums. |
-| <img src="assets/icons/database.svg" width="16" height="16" align="absmiddle" alt="" /> **VPS Pull Bridge & DB Migrate** | Pull backups from any VPS running `chronobase --agent` to local storage or a local DB with automatic VPS staging cleanup, or migrate DB-to-DB in one click. |
-| <img src="assets/icons/clock.svg" width="16" height="16" align="absmiddle" alt="" /> **Single-Task Local Cron Engine** | Accepts 5-field cron presets (`Daily 2am`, `Every 6h`, `Hourly`, `Weekly Sun`, `Monthly`), prevents duplicate concurrent runs, and records `last_run`. |
+| <img src="assets/icons/layers.svg" width="16" height="16" align="absmiddle" alt="" /> **Strata Stone-Glass Native UI** | Built with **Slint 1.19** (`Geist` & `Geist Mono`), expandable **Dashboard Breakdown**, virtualized `Group · Date` history with **Folder Reveal**, and per-tab **`(i)` Setup Guides**. |
+| <img src="assets/icons/shield.svg" width="16" height="16" align="absmiddle" alt="" /> **Hardened Against Leaks & Traversal** | Passwords never enter `argv` or logs; snapshot deletion & reveal check canonicalized paths; VPS transfers use mutual HMAC-SHA256 + `ChaCha20-Poly1305` + SHA-256 checksums. |
+| <img src="assets/icons/database.svg" width="16" height="16" align="absmiddle" alt="" /> **Unified Connections, VPS Pull & Migration** | Group Direct DBs & VPS Peers together so cron runs both; migrate **`VPS -> Local DB`** or **`DB -> DB`** in one click with engine & PostgreSQL major-version preflight checks. |
+| <img src="assets/icons/clock.svg" width="16" height="16" align="absmiddle" alt="" /> **Background Tray & OS Startup Cron** | Toggle **Run in background** & **Run on OS startup** (`--tray`) from the sidebar to keep ChronoBase in your system tray while 5-field cron jobs run unattended. |
 | <img src="assets/icons/database.svg" width="16" height="16" align="absmiddle" alt="" /> **Drop-In `v1` Migration** | Existing [ChronoBase v1 (`d695de05`)](https://github.com/Subham-Maity/chronobase/tree/d695de05d8e5966a39b9e0b37e612e182ab9eb48) `chronobase-data.json` files load directly and re-base stale paths. |
 | <img src="assets/icons/terminal.svg" width="16" height="16" align="absmiddle" alt="" /> **GUI, Headless, Agent & CLI** | Run the desktop app interactively, `--headless` scheduler daemon, `--agent` VPS listener, or scriptable `backup`, `list`, `pull` commands. |
 
@@ -175,9 +175,13 @@ chronobase --agent --bind 0.0.0.0:9443 --allow-ip <YOUR_HOME_OR_TAILSCALE_IP>
 3. Choose **Pull destination**: `Local backups/ storage ONLY` **or** any local ChronoBase database connection.
 4. Click **Pull** anytime (or script `chronobase pull <vps-name>`): ChronoBase authenticates, downloads encrypted, verifies SHA-256, deletes the staging file on the VPS, records the snapshot locally, and optionally pushes it straight into your chosen local DB.
 
-### 3. One-Click DB-to-DB Migration
+### 3. One-Click Migration (`VPS -> Local DB` & `DB -> DB`)
 
-Click **Migrate DB -> DB** under **VPS & Migrate** to dump any configured Source database into `backups/` and immediately restore it cleanly (`--clean --if-exists --no-owner` / `mongorestore --drop`) into any matching-engine Destination database in a single click.
+Click **Migrate DB -> DB** under **VPS & Migrate** to pick any Source (**VPS Peer** or **Direct Connection**) and any compatible Destination **Direct Connection**. ChronoBase verifies engine compatibility and PostgreSQL major-version parity before restoring cleanly (`--clean --if-exists --no-owner` / `mongorestore --drop`), saving the snapshot under `backups/<Group>/<YYYY-MM-DD>/`.
+
+### 4. Background System Tray & OS Startup
+
+Use the **Run in background** card at the bottom of the left sidebar to minimize ChronoBase to the native OS system tray on window close while keeping `ScheduleRunner` cron jobs active across both direct connections and grouped VPS peers. Enable **Run on OS startup** to launch automatically with `--tray` on login (Windows `HKCU\...\Run`, macOS `LaunchAgents`, Linux XDG autostart).
 
 ---
 

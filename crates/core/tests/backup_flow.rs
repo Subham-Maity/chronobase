@@ -101,7 +101,8 @@ async fn full_backup_list_and_delete_flow_with_stub_executable() {
         .expect("backup connection");
     assert_eq!(run.entry.status, BackupStatus::Success);
     assert!(run.entry.file_size > 0);
-    assert!(run.entry.file_path.starts_with("Prod/IntegrationDB_"));
+    assert!(run.entry.file_path.starts_with("Prod/"));
+    assert!(run.entry.file_path.contains("/IntegrationDB_"));
 
     let listed = bk_svc.list_filtered(None, None, None).expect("list");
     assert_eq!(listed.len(), 1);

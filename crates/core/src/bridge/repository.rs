@@ -3,7 +3,17 @@
 use std::sync::Arc;
 
 use crate::bridge::{BridgeError, CreateVpsPeerInput, UpdateVpsPeerInput, VpsPeer};
+use crate::constant::DEFAULT_GROUP;
 use crate::store::{JsonStore, local_timestamp};
+
+fn normalize_group(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        DEFAULT_GROUP.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
 
 /// Persistence boundary for configured VPS Pull peers.
 pub trait VpsPeerRepository: Send + Sync {
@@ -56,6 +66,7 @@ impl VpsPeerRepository for StoreVpsPeerRepository {
             let peer = VpsPeer {
                 id,
                 name: input.name.trim().to_string(),
+                group_name: normalize_group(&input.group_name),
                 endpoint: input.endpoint.trim().to_string(),
                 db_type: input.db_type,
                 remote_url: input.remote_url,
@@ -75,6 +86,7 @@ impl VpsPeerRepository for StoreVpsPeerRepository {
         let updated = self.store.mutate_with(|d| {
             let p = d.vps_peers.iter_mut().find(|p| p.id == id)?;
             p.name = input.name.trim().to_string();
+            p.group_name = normalize_group(&input.group_name);
             p.endpoint = input.endpoint.trim().to_string();
             p.db_type = input.db_type;
             p.remote_url = input.remote_url;

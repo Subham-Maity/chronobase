@@ -11,6 +11,221 @@ use tokio::process::Command;
 
 use crate::constant::DATA_FILE_NAME;
 
+/// Opens the OS file manager highlighting or displaying `path` (no shell invoked).
+pub fn reveal_in_file_manager(path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(format!("/select,{}", path.display()))
+            .spawn()?;
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn()?;
+        Ok(())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let target = if path.is_dir() {
+            path
+        } else {
+            path.parent().unwrap_or(path)
+        };
+        std::process::Command::new("xdg-open").arg(target).spawn()?;
+        Ok(())
+    }
+}
+
+/// Formats an XDG `.desktop` autostart entry launching `exe_path` minimized to tray.
+pub fn format_xdg_autostart(exe_path: &Path) -> String {
+    format!(
+        "[Desktop Entry]\nType=Application\nName=ChronoBase\nComment=Local-first PostgreSQL and MongoDB backup scheduler\nExec=\"{}\" --tray\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+        exe_path.display()
+    )
+}
+
+/// Formats a macOS `LaunchAgents` `.plist` launching `exe_path` minimized to tray.
+pub fn format_launchagent_plist(exe_path: &Path) -> String {
+    let escaped = exe_path
+        .display()
+        .to_string()
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n  <key>Label</key>\n  <string>com.chronobase.app</string>\n  <key>ProgramArguments</key>\n  <array>\n    <string>{escaped}</string>\n    <string>--tray</string>\n  </array>\n  <key>RunAtLoad</key>\n  <true/>\n</dict>\n</plist>\n"
+    )
+}
+
+/// Registers or removes ChronoBase from OS login startup (launching with `--tray`).
+pub fn set_autostart(enabled: bool) -> io::Result<()> {
+    let exe = std::env::current_exe()?;
+
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
+        use windows_sys::Win32::System::Registry::{
+            HKEY, HKEY_CURRENT_USER, KEY_WRITE, REG_SZ, RegCloseKey, RegCreateKeyExW,
+            RegDeleteValueW, RegSetValueExW,
+        };
+
+        struct HKeyGuard(HKEY);
+        impl Drop for HKeyGuard {
+            fn drop(&mut self) {
+                unsafe {
+                    let _ = RegCloseKey(self.0);
+                }
+            }
+        }
+
+        let subkey: Vec<u16> = "Software\\Microsoft\\Windows\\CurrentVersion\\Run\0"
+            .encode_utf16()
+            .collect();
+        let value_name: Vec<u16> = "ChronoBase\0".encode_utf16().collect();
+        let mut hkey: HKEY = std::ptr::null_mut();
+
+        let status = unsafe {
+            RegCreateKeyExW(
+                HKEY_CURRENT_USER,
+                subkey.as_ptr(),
+                0,
+                std::ptr::null(),
+                0,
+                KEY_WRITE,
+                std::ptr::null(),
+                &mut hkey,
+                std::ptr::null_mut(),
+            )
+        };
+        if status != ERROR_SUCCESS {
+            return Err(io::Error::from_raw_os_error(status as i32));
+        }
+        let _guard = HKeyGuard(hkey);
+
+        if enabled {
+            let cmd = format!("\"{}\" --tray\0", exe.display());
+            let cmd_utf16: Vec<u16> = cmd.encode_utf16().collect();
+            let byte_len = (cmd_utf16.len() * std::mem::size_of::<u16>()) as u32;
+            let res = unsafe {
+                RegSetValueExW(
+                    hkey,
+                    value_name.as_ptr(),
+                    0,
+                    REG_SZ,
+                    cmd_utf16.as_ptr().cast::<u8>(),
+                    byte_len,
+                )
+            };
+            if res != ERROR_SUCCESS {
+                return Err(io::Error::from_raw_os_error(res as i32));
+            }
+        } else {
+            let res = unsafe { RegDeleteValueW(hkey, value_name.as_ptr()) };
+            if res != ERROR_SUCCESS && res != ERROR_FILE_NOT_FOUND {
+                return Err(io::Error::from_raw_os_error(res as i32));
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let base = directories::BaseDirs::new()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "home directory unavailable"))?;
+        let agents_dir = base.home_dir().join("Library").join("LaunchAgents");
+        let plist_path = agents_dir.join("com.chronobase.app.plist");
+        if enabled {
+            std::fs::create_dir_all(&agents_dir)?;
+            std::fs::write(&plist_path, format_launchagent_plist(&exe))?;
+        } else if plist_path.exists() {
+            std::fs::remove_file(&plist_path)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let base = directories::BaseDirs::new().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "config directory unavailable")
+        })?;
+        let autostart_dir = base.config_dir().join("autostart");
+        let desktop_path = autostart_dir.join("chronobase.desktop");
+        if enabled {
+            std::fs::create_dir_all(&autostart_dir)?;
+            std::fs::write(&desktop_path, format_xdg_autostart(&exe))?;
+        } else if desktop_path.exists() {
+            std::fs::remove_file(&desktop_path)?;
+        }
+        Ok(())
+    }
+}
+
+/// Returns `true` if ChronoBase is currently registered in OS login autostart.
+pub fn is_autostart_enabled() -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+        use windows_sys::Win32::System::Registry::{
+            HKEY, HKEY_CURRENT_USER, KEY_READ, RegCloseKey, RegOpenKeyExW, RegQueryValueExW,
+        };
+
+        let subkey: Vec<u16> = "Software\\Microsoft\\Windows\\CurrentVersion\\Run\0"
+            .encode_utf16()
+            .collect();
+        let value_name: Vec<u16> = "ChronoBase\0".encode_utf16().collect();
+        let mut hkey: HKEY = std::ptr::null_mut();
+
+        let status =
+            unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, KEY_READ, &mut hkey) };
+        if status != ERROR_SUCCESS {
+            return false;
+        }
+        let res = unsafe {
+            RegQueryValueExW(
+                hkey,
+                value_name.as_ptr(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        unsafe {
+            let _ = RegCloseKey(hkey);
+        }
+        res == ERROR_SUCCESS
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        directories::BaseDirs::new()
+            .map(|b| {
+                b.home_dir()
+                    .join("Library")
+                    .join("LaunchAgents")
+                    .join("com.chronobase.app.plist")
+                    .exists()
+            })
+            .unwrap_or(false)
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        directories::BaseDirs::new()
+            .map(|b| {
+                b.config_dir()
+                    .join("autostart")
+                    .join("chronobase.desktop")
+                    .exists()
+            })
+            .unwrap_or(false)
+    }
+}
+
 /// Returns the platform-appropriate executable filename for a CLI tool
 /// (appends `.exe` on Windows).
 pub fn tool_filename(base: &str) -> String {
@@ -248,5 +463,17 @@ mod tests {
         let custom = Path::new("/tmp/chronobase-custom");
         let resolved = resolve_data_dir(Some(custom)).expect("resolve");
         assert_eq!(resolved, custom);
+    }
+
+    #[test]
+    fn autostart_templates_include_tray_flag() {
+        let exe = Path::new("/usr/local/bin/chronobase");
+        let xdg = format_xdg_autostart(exe);
+        assert!(xdg.contains("--tray"));
+        assert!(xdg.contains("X-GNOME-Autostart-enabled=true"));
+
+        let plist = format_launchagent_plist(exe);
+        assert!(plist.contains("<string>--tray</string>"));
+        assert!(plist.contains("<key>RunAtLoad</key>"));
     }
 }

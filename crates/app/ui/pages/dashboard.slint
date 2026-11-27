@@ -1,7 +1,6 @@
-// Dashboard page — Signature "Strata" layout:
-// Status sentence + Back up all, 3 unboxed mono figures, and stacked sediment snapshot layers.
+// Dashboard page — Strata Overview with Expandable Group, Tooling & Snapshot Details
 
-import { ListView } from "std-widgets.slint";
+import { ListView, ScrollView } from "std-widgets.slint";
 import { Palette, Type, Space, Motion } from "../theme.slint";
 import { Icons, Icon } from "../icons.slint";
 import { PrimaryButton, GhostButton } from "../components/buttons.slint";
@@ -13,24 +12,71 @@ export struct RecentBackupRow {
     id: int,
     connection-name: string,
     group-name: string,
+    source-kind: string,
     db-type: string,
     status: string,
     size-text: string,
     when-text: string,
+    exact-time: string,
+    file-path: string,
+    error-msg: string,
+    missing-on-disk: bool,
+}
+
+export struct GroupBreakdownRow {
+    group-name: string,
+    local-conns: int,
+    vps-peers: int,
+    backup-count: int,
+    failed-count: int,
+    total-size: string,
+    last-backup: string,
+}
+
+export struct ToolDetailRow {
+    name: string,
+    ready: bool,
+    version: string,
+    path: string,
 }
 
 export component DashboardPage inherits VerticalLayout {
     in property <string> stat-conns: "0";
+    in property <string> stat-targets-detail: "0 local · 0 VPS";
     in property <string> stat-backups: "0";
     in property <string> stat-rate: "no backups yet";
     in property <string> stat-size: "0 B";
+    in property <string> stat-size-detail: "Direct 0 B · VPS 0 B";
     in property <string> stat-last: "—";
     in property <string> stat-scheds: "0 active schedules";
+    in property <string> stat-next-cron: "None";
+    in property <string> stat-next-cron-detail: "No enabled schedule";
+    in property <string> dash-data-dir: "";
+    in property <string> dash-bg-status: "";
     in property <bool> backup-all-busy: false;
     in property <[RecentBackupRow]> recent-rows: [];
+    in property <[GroupBreakdownRow]> group-rows: [];
+    in property <[ToolDetailRow]> tool-rows: [];
+
+    in-out property <bool> groups-expanded: true;
+    in-out property <bool> tools-expanded: false;
+    in-out property <int> selected-recent-id: -1;
+    in-out property <string> sel-name: "";
+    in-out property <string> sel-group: "";
+    in-out property <string> sel-source: "";
+    in-out property <string> sel-engine: "";
+    in-out property <string> sel-status: "";
+    in-out property <string> sel-size: "";
+    in-out property <string> sel-exact-time: "";
+    in-out property <string> sel-file-path: "";
+    in-out property <string> sel-error-msg: "";
+    in-out property <bool> sel-missing: false;
 
     callback open-guide();
     callback backup-all();
+    callback backup-group-now(string);
+    callback reveal-backup(int);
+    callback open-restore(int);
     callback navigate(string);
 
     property <bool> last-failed: recent-rows.length > 0 && recent-rows[0].status == "failed";
@@ -92,13 +138,12 @@ export component DashboardPage inherits VerticalLayout {
                     text: backup-all-busy ? "Backing up..." : "Back up all";
                     icon-path: Icons.bolt;
                     enabled: !backup-all-busy;
-                    a11y-label: "Back up all connections";
+                    a11y-label: "Back up all connections and VPS peers";
                     clicked => { root.backup-all(); }
                 }
             }
         }
 
-        // Honest indeterminate progress bar (active ONLY while backup-all-busy is true)
         if backup-all-busy: Rectangle {
             height: 3px;
             border-radius: 2px;
@@ -115,11 +160,13 @@ export component DashboardPage inherits VerticalLayout {
         }
     }
 
-    // ── Three unboxed mono figures (no cards, no borders, no clipped text) ──
+    // ── Detailed 4-Column KPI Breakdown ──
     HorizontalLayout {
-        spacing: Space.s32;
+        spacing: Space.s24;
 
         VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
             spacing: 2px;
             Text {
                 text: stat-conns;
@@ -129,14 +176,23 @@ export component DashboardPage inherits VerticalLayout {
                 color: Palette.ink-1;
             }
             Text {
-                text: "Databases tracked";
+                text: "Tracked targets";
                 font-family: Palette.font-ui;
                 font-size: Type.secondary;
+                color: Palette.ink-2;
+            }
+            Text {
+                text: stat-targets-detail;
+                font-family: Palette.font-ui;
+                font-size: Type.min-label;
                 color: Palette.ink-3;
+                overflow: elide;
             }
         }
 
         VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
             spacing: 2px;
             Text {
                 text: stat-backups;
@@ -149,11 +205,20 @@ export component DashboardPage inherits VerticalLayout {
                 text: "Total snapshots";
                 font-family: Palette.font-ui;
                 font-size: Type.secondary;
+                color: Palette.ink-2;
+            }
+            Text {
+                text: stat-rate;
+                font-family: Palette.font-ui;
+                font-size: Type.min-label;
                 color: Palette.ink-3;
+                overflow: elide;
             }
         }
 
         VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
             spacing: 2px;
             Text {
                 text: stat-size;
@@ -166,234 +231,546 @@ export component DashboardPage inherits VerticalLayout {
                 text: "Local storage";
                 font-family: Palette.font-ui;
                 font-size: Type.secondary;
+                color: Palette.ink-2;
+            }
+            Text {
+                text: stat-size-detail;
+                font-family: Palette.font-ui;
+                font-size: Type.min-label;
                 color: Palette.ink-3;
+                overflow: elide;
             }
         }
 
-        Rectangle { horizontal-stretch: 1; }
-    }
-
-    // ── Strata Stack: Recent Snapshots ──
-    VerticalLayout {
-        vertical-stretch: 1;
-        spacing: Space.s12;
-
-        HorizontalLayout {
-            alignment: space-between;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            spacing: 2px;
             Text {
-                text: "Recent snapshots";
-                font-family: Palette.font-ui;
+                text: stat-next-cron;
+                font-family: Palette.font-mono;
                 font-size: Type.section;
                 font-weight: 600;
-                color: Palette.ink-1;
+                height: 34px;
+                vertical-alignment: bottom;
+                color: stat-next-cron == "None" ? Palette.ink-3 : Palette.signal;
+                overflow: elide;
             }
-            if recent-rows.length > 0: GhostButton {
-                text: "View all";
-                small: true;
-                clicked => { root.navigate("backups"); }
+            Text {
+                text: "Next cron run";
+                font-family: Palette.font-ui;
+                font-size: Type.secondary;
+                color: Palette.ink-2;
+            }
+            Text {
+                text: stat-next-cron-detail;
+                font-family: Palette.font-ui;
+                font-size: Type.min-label;
+                color: Palette.ink-3;
+                overflow: elide;
             }
         }
+    }
 
-        Surface {
-            vertical-stretch: 1;
-            min-height: 180px;
+    // ── Expandable Breakdown + Recent Snapshots ──
+    ScrollView {
+        vertical-stretch: 1;
+        VerticalLayout {
+            alignment: start;
+            spacing: Space.s16;
 
-            // Empty state: drawn node-to-ghost-node scene + 1 CTA
-            if recent-rows.length == 0: VerticalLayout {
-                alignment: center;
-                spacing: Space.s16;
-
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 12px;
-
-                    // Active DB node
-                    VerticalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 36px;
-                            height: 36px;
-                            border-radius: 18px;
-                            background: Palette.tier-raised;
-                            border-width: 1px;
-                            border-color: Palette.line-strong;
-                            Icon {
-                                svg-path: Icons.database;
-                                tint: Palette.ink-2;
-                                size: 16px;
-                            }
-                        }
-                    }
-
-                    // Dotted line
-                    VerticalLayout {
-                        alignment: center;
-                        Path {
-                            width: 64px;
-                            height: 4px;
-                            viewbox-x: 0;
-                            viewbox-y: 0;
-                            viewbox-width: 64;
-                            viewbox-height: 4;
-                            commands: "M2 2 L10 2 M18 2 L26 2 M34 2 L42 2 M50 2 L58 2";
-                            stroke: Palette.ink-3;
-                            stroke-width: 1.5px;
-                            stroke-line-cap: round;
-                        }
-                    }
-
-                    // Ghost snapshot node
-                    VerticalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 36px;
-                            height: 36px;
-                            border-radius: 18px;
-                            background: transparent;
-                            border-width: 1px;
-                            border-color: Palette.signal;
-                            Icon {
-                                svg-path: Icons.archive;
-                                tint: Palette.signal;
-                                size: 16px;
-                            }
-                        }
-                    }
-                }
-
+            // Expandable 1: Group & Storage Breakdown
+            Surface {
                 VerticalLayout {
-                    spacing: 4px;
-                    Text {
-                        text: "No snapshots layered yet";
-                        font-family: Palette.font-ui;
-                        font-size: Type.body;
-                        font-weight: 500;
-                        color: Palette.ink-1;
-                        horizontal-alignment: center;
+                    Rectangle {
+                        height: 40px;
+                        background: Palette.tier-base;
+                        HorizontalLayout {
+                            padding-left: Space.s16;
+                            padding-right: Space.s16;
+                            spacing: Space.s8;
+                            VerticalLayout {
+                                alignment: center;
+                                Icon {
+                                    svg-path: groups-expanded ? Icons.chevron : Icons.chevron-right;
+                                    tint: Palette.ink-2;
+                                    size: 14px;
+                                }
+                            }
+                            Text {
+                                text: "Group & storage breakdown (" + group-rows.length + ")";
+                                font-family: Palette.font-ui;
+                                font-size: Type.secondary;
+                                font-weight: 600;
+                                color: Palette.ink-1;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: groups-expanded ? "Collapse" : "Expand";
+                                font-family: Palette.font-ui;
+                                font-size: Type.min-label;
+                                color: Palette.ink-3;
+                                vertical-alignment: center;
+                            }
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { groups-expanded = !groups-expanded; }
+                        }
                     }
-                    Text {
-                        text: "Add a PostgreSQL or MongoDB connection to start building your backup strata.";
-                        font-family: Palette.font-ui;
-                        font-size: Type.secondary;
-                        color: Palette.ink-3;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
-                    }
-                }
 
-                HorizontalLayout {
-                    alignment: center;
-                    PrimaryButton {
-                        text: "Add a database";
-                        icon-path: Icons.plus;
-                        clicked => { root.navigate("connections"); }
+                    if groups-expanded && group-rows.length == 0: Rectangle {
+                        height: 44px;
+                        Text {
+                            x: Space.s16;
+                            text: "No groups configured yet. Add a database or VPS peer under Connections.";
+                            font-family: Palette.font-ui;
+                            font-size: Type.min-label;
+                            color: Palette.ink-3;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    if groups-expanded: VerticalLayout {
+                        for g in group-rows: Rectangle {
+                            height: 46px;
+                            border-width: 1px;
+                            border-color: Palette.row-divider;
+                            HorizontalLayout {
+                                padding-left: Space.s16;
+                                padding-right: Space.s16;
+                                spacing: Space.s12;
+
+                                Text {
+                                    text: g.group-name;
+                                    horizontal-stretch: 2;
+                                    min-width: 0px;
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.secondary;
+                                    font-weight: 600;
+                                    color: Palette.ink-1;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: g.local-conns + " local · " + g.vps-peers + " VPS";
+                                    horizontal-stretch: 2;
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.min-label;
+                                    color: Palette.ink-2;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: g.backup-count + " snapshots" + (g.failed-count > 0 ? " (" + g.failed-count + " err)" : "");
+                                    horizontal-stretch: 2;
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.min-label;
+                                    color: g.failed-count > 0 ? Palette.bad : Palette.ink-2;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: g.total-size;
+                                    width: 76px;
+                                    horizontal-alignment: right;
+                                    font-family: Palette.font-mono;
+                                    font-size: Type.min-label;
+                                    color: Palette.ink-1;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: g.last-backup;
+                                    width: 74px;
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.min-label;
+                                    color: Palette.ink-3;
+                                    vertical-alignment: center;
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    GhostButton {
+                                        text: "Back up";
+                                        icon-path: Icons.bolt;
+                                        small: true;
+                                        enabled: !backup-all-busy;
+                                        clicked => { root.backup-group-now(g.group-name); }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            if recent-rows.length > 0: ListView {
-                vertical-stretch: 1;
-
-                for row[idx] in recent-rows: Rectangle {
-                    height: 52px;
-                    // Sediment tone fades with age (newest brightest, older deeper)
-                    background: idx == 0 ? rgba(255, 255, 255, 0.085)
-                        : idx == 1 ? rgba(255, 255, 255, 0.065)
-                        : idx == 2 ? rgba(255, 255, 255, 0.050)
-                        : idx == 3 ? rgba(255, 255, 255, 0.038)
-                        : rgba(255, 255, 255, 0.025);
-                    border-width: 1px;
-                    border-color: Palette.row-divider;
-
-                    // Freshest strata layer edged with cold ice signal (or bad if failed)
-                    if idx == 0: Rectangle {
-                        x: 0px;
-                        y: 6px;
-                        width: 3px;
-                        height: parent.height - 12px;
-                        border-radius: 2px;
-                        background: row.status == "failed" ? Palette.bad : Palette.signal;
-                    }
-
-                    // Small fracture notch on failed layer
-                    if row.status == "failed": Path {
-                        x: 10px;
-                        y: 0px;
-                        width: 16px;
-                        height: 8px;
-                        viewbox-x: 0;
-                        viewbox-y: 0;
-                        viewbox-width: 16;
-                        viewbox-height: 8;
-                        commands: "M0 0 L6 5 L10 2 L16 0";
-                        fill: transparent;
-                        stroke: Palette.bad;
-                        stroke-width: 1.5px;
-                    }
-
-                    HorizontalLayout {
-                        padding-left: Space.s16;
-                        padding-right: Space.s16;
-                        spacing: Space.s12;
-
-                        VerticalLayout {
-                            alignment: center;
-                            Icon {
-                                svg-path: row.db-type == "postgres" ? Icons.database : Icons.archive;
-                                tint: Palette.ink-2;
-                                size: 15px;
+            // Expandable 2: Tooling, Versions & Environment Health
+            Surface {
+                VerticalLayout {
+                    Rectangle {
+                        height: 40px;
+                        background: Palette.tier-base;
+                        HorizontalLayout {
+                            padding-left: Space.s16;
+                            padding-right: Space.s16;
+                            spacing: Space.s8;
+                            VerticalLayout {
+                                alignment: center;
+                                Icon {
+                                    svg-path: tools-expanded ? Icons.chevron : Icons.chevron-right;
+                                    tint: Palette.ink-2;
+                                    size: 14px;
+                                }
+                            }
+                            Text {
+                                text: "Tooling, versions & environment health";
+                                font-family: Palette.font-ui;
+                                font-size: Type.secondary;
+                                font-weight: 600;
+                                color: Palette.ink-1;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: tools-expanded ? "Collapse" : "Expand";
+                                font-family: Palette.font-ui;
+                                font-size: Type.min-label;
+                                color: Palette.ink-3;
+                                vertical-alignment: center;
                             }
                         }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { tools-expanded = !tools-expanded; }
+                        }
+                    }
 
+                    if tools-expanded: VerticalLayout {
+                        for t in tool-rows: Rectangle {
+                            height: 38px;
+                            border-width: 1px;
+                            border-color: Palette.row-divider;
+                            HorizontalLayout {
+                                padding-left: Space.s16;
+                                padding-right: Space.s16;
+                                spacing: Space.s12;
+                                Text {
+                                    text: t.name;
+                                    width: 110px;
+                                    font-family: Palette.font-mono;
+                                    font-size: Type.min-label;
+                                    font-weight: 600;
+                                    color: Palette.ink-1;
+                                    vertical-alignment: center;
+                                }
+                                HorizontalLayout {
+                                    width: 90px;
+                                    alignment: start;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Badge {
+                                            text: t.ready ? "Ready" : "Missing";
+                                            variant: t.ready ? "success" : "failed";
+                                        }
+                                    }
+                                }
+                                Text {
+                                    text: t.version;
+                                    width: 80px;
+                                    font-family: Palette.font-mono;
+                                    font-size: Type.min-label;
+                                    color: Palette.signal;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: t.path;
+                                    horizontal-stretch: 1;
+                                    min-width: 0px;
+                                    font-family: Palette.font-mono;
+                                    font-size: Type.min-label;
+                                    color: Palette.ink-3;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                        Rectangle {
+                            height: 38px;
+                            background: Palette.tier-base;
+                            HorizontalLayout {
+                                padding-left: Space.s16;
+                                padding-right: Space.s16;
+                                spacing: Space.s16;
+                                Text {
+                                    text: "Data dir: " + dash-data-dir;
+                                    horizontal-stretch: 1;
+                                    min-width: 0px;
+                                    font-family: Palette.font-mono;
+                                    font-size: Type.min-label;
+                                    color: Palette.ink-3;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: dash-bg-status;
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.min-label;
+                                    color: Palette.signal;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Recent Snapshots (click any row to expand full detail drawer)
+            VerticalLayout {
+                spacing: Space.s12;
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text {
+                        text: "Recent snapshots (click a row for full details)";
+                        font-family: Palette.font-ui;
+                        font-size: Type.section;
+                        font-weight: 600;
+                        color: Palette.ink-1;
+                    }
+                    if recent-rows.length > 0: GhostButton {
+                        text: "View all";
+                        small: true;
+                        clicked => { root.navigate("backups"); }
+                    }
+                }
+
+                Surface {
+                    min-height: recent-rows.length == 0 ? 180px : 52px;
+
+                    if recent-rows.length == 0: VerticalLayout {
+                        alignment: center;
+                        spacing: Space.s12;
                         Text {
-                            text: row.connection-name;
-                            horizontal-stretch: 3;
+                            text: "No snapshots layered yet";
                             font-family: Palette.font-ui;
                             font-size: Type.body;
                             font-weight: 500;
                             color: Palette.ink-1;
-                            vertical-alignment: center;
-                            overflow: elide;
+                            horizontal-alignment: center;
                         }
-
-                        HorizontalLayout {
-                            horizontal-stretch: 2;
-                            alignment: start;
-                            VerticalLayout {
-                                alignment: center;
-                                Badge { text: row.group-name; variant: "group"; }
-                            }
-                        }
-
                         Text {
-                            text: row.when-text;
-                            horizontal-stretch: 1;
+                            text: "Add a PostgreSQL or MongoDB connection or VPS peer to start building your backup strata.";
                             font-family: Palette.font-ui;
                             font-size: Type.secondary;
                             color: Palette.ink-3;
-                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
                         }
+                        HorizontalLayout {
+                            alignment: center;
+                            PrimaryButton {
+                                text: "Add a database";
+                                icon-path: Icons.plus;
+                                clicked => { root.navigate("connections"); }
+                            }
+                        }
+                    }
 
-                        Text {
-                            text: row.size-text;
-                            width: 80px;
-                            horizontal-alignment: right;
-                            font-family: Palette.font-mono;
-                            font-size: Type.secondary;
-                            color: Palette.ink-2;
-                            vertical-alignment: center;
+                    if recent-rows.length > 0: VerticalLayout {
+                        for row[idx] in recent-rows: Rectangle {
+                            height: 52px;
+                            background: row.id == selected-recent-id ? Palette.signal-dim
+                                : idx == 0 ? rgba(255, 255, 255, 0.085)
+                                : idx == 1 ? rgba(255, 255, 255, 0.065)
+                                : rgba(255, 255, 255, 0.035);
+                            border-width: 1px;
+                            border-color: Palette.row-divider;
+
+                            if idx == 0: Rectangle {
+                                x: 0px;
+                                y: 6px;
+                                width: 3px;
+                                height: parent.height - 12px;
+                                border-radius: 2px;
+                                background: row.status == "failed" ? Palette.bad : Palette.signal;
+                            }
+
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    if (selected-recent-id == row.id) {
+                                        selected-recent-id = -1;
+                                    } else {
+                                        selected-recent-id = row.id;
+                                        sel-name = row.connection-name;
+                                        sel-group = row.group-name;
+                                        sel-source = row.source-kind;
+                                        sel-engine = row.db-type;
+                                        sel-status = row.status;
+                                        sel-size = row.size-text;
+                                        sel-exact-time = row.exact-time;
+                                        sel-file-path = row.file-path;
+                                        sel-error-msg = row.error-msg;
+                                        sel-missing = row.missing-on-disk;
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: Space.s16;
+                                padding-right: Space.s16;
+                                spacing: Space.s12;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Icon {
+                                        svg-path: row.db-type == "postgres" ? Icons.database : Icons.archive;
+                                        tint: Palette.ink-2;
+                                        size: 15px;
+                                    }
+                                }
+
+                                Text {
+                                    text: row.connection-name;
+                                    horizontal-stretch: 3;
+                                    min-width: 0px;
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.body;
+                                    font-weight: 500;
+                                    color: Palette.ink-1;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+
+                                HorizontalLayout {
+                                    horizontal-stretch: 2;
+                                    alignment: start;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Badge { text: row.group-name; variant: "group"; }
+                                    }
+                                }
+
+                                Text {
+                                    text: row.when-text;
+                                    horizontal-stretch: 1;
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.secondary;
+                                    color: Palette.ink-3;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: row.size-text;
+                                    width: 80px;
+                                    horizontal-alignment: right;
+                                    font-family: Palette.font-mono;
+                                    font-size: Type.secondary;
+                                    color: Palette.ink-2;
+                                    vertical-alignment: center;
+                                }
+
+                                HorizontalLayout {
+                                    width: 108px;
+                                    alignment: end;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Badge {
+                                            text: row.status == "success" ? "Succeeded" : "Failed";
+                                            variant: row.status == "success" ? "success" : "failed";
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Expandable Snapshot Inspector Drawer
+                if selected-recent-id >= 0: Surface {
+                    raised: true;
+                    VerticalLayout {
+                        padding: Space.s16;
+                        spacing: Space.s12;
+
+                        HorizontalLayout {
+                            alignment: space-between;
+                            spacing: Space.s12;
+                            HorizontalLayout {
+                                spacing: Space.s8;
+                                Text {
+                                    text: sel-name;
+                                    font-family: Palette.font-ui;
+                                    font-size: Type.section;
+                                    font-weight: 600;
+                                    color: Palette.ink-1;
+                                    vertical-alignment: center;
+                                }
+                                VerticalLayout { alignment: center; Badge { text: sel-source; variant: "group"; } }
+                                VerticalLayout { alignment: center; Badge { text: sel-group; variant: "group"; } }
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                if sel-status == "success" && !sel-missing: GhostButton {
+                                    text: "Open folder";
+                                    icon-path: Icons.folder;
+                                    small: true;
+                                    clicked => { root.reveal-backup(selected-recent-id); }
+                                }
+                                if sel-status == "success" && !sel-missing: GhostButton {
+                                    text: "Restore";
+                                    icon-path: Icons.restore;
+                                    small: true;
+                                    clicked => { root.open-restore(selected-recent-id); }
+                                }
+                                GhostButton {
+                                    icon-path: Icons.close;
+                                    small: true;
+                                    clicked => { selected-recent-id = -1; }
+                                }
+                            }
                         }
 
                         HorizontalLayout {
-                            width: 108px;
-                            alignment: end;
-                            VerticalLayout {
-                                alignment: center;
-                                Badge {
-                                    text: row.status == "success" ? "Succeeded" : "Failed";
-                                    variant: row.status == "success" ? "success" : "failed";
-                                }
+                            spacing: Space.s24;
+                            Text {
+                                text: "Saved: " + sel-exact-time;
+                                font-family: Palette.font-mono;
+                                font-size: Type.min-label;
+                                color: Palette.ink-2;
                             }
+                            Text {
+                                text: "Engine: " + sel-engine;
+                                font-family: Palette.font-mono;
+                                font-size: Type.min-label;
+                                color: Palette.ink-2;
+                            }
+                            Text {
+                                text: "Size: " + sel-size;
+                                font-family: Palette.font-mono;
+                                font-size: Type.min-label;
+                                color: Palette.ink-2;
+                            }
+                            Text {
+                                text: sel-missing ? "Disk: Missing" : "Disk: Verified";
+                                font-family: Palette.font-mono;
+                                font-size: Type.min-label;
+                                color: sel-missing ? Palette.warn : Palette.ok;
+                            }
+                        }
+
+                        if sel-file-path != "": Text {
+                            text: "Artifact: backups/" + sel-file-path;
+                            font-family: Palette.font-mono;
+                            font-size: Type.min-label;
+                            color: Palette.signal;
+                            wrap: word-wrap;
+                        }
+
+                        if sel-error-msg != "": Text {
+                            text: "Error: " + sel-error-msg;
+                            font-family: Palette.font-mono;
+                            font-size: Type.min-label;
+                            color: Palette.bad;
+                            wrap: word-wrap;
                         }
                     }
                 }

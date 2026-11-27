@@ -43,6 +43,7 @@ pub fn push_vps_peers(weak: &Weak<MainWindow>, peers: Vec<VpsPeer>, connections:
                 VpsPeerRow {
                     id: p.id as i32,
                     name: p.name.into(),
+                    group_name: p.group_name.into(),
                     endpoint: p.endpoint.into(),
                     db_type: p.db_type.as_str().into(),
                     fingerprint: fp.into(),

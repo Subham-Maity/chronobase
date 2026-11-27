@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/Subham-Maity/chronobase"
@@ -32,10 +32,10 @@ url = "2.5"
 directories = "6.0"
 # Advisory file locking on the JSON store
 fs4 = "1.1"
-# Windows console attachment for CLI/headless mode
-windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation"] }
-# Native desktop UI
-slint = { version = "1.19.1", default-features = false, features = ["compat-1-18", "std", "backend-winit"] }
+# Windows console attachment and startup registry integration
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_Registry"] }
+# Native desktop UI + built-in cross-platform system tray
+slint = { version = "1.19.1", default-features = false, features = ["compat-1-18", "std", "backend-winit", "system-tray"] }
 slint-build = "1.19.1"
 # Dev-only mocking for CommandRunner and repositories
 mockall = "0.15"

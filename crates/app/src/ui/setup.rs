@@ -17,21 +17,33 @@ pub fn push_tools(weak: &Weak<MainWindow>, status: ToolStatus) {
         let mongo_ready = status.has_mongo();
 
         win.set_pg_ready(pg_ready);
+        let pg_ver = status
+            .versions
+            .pg_dump
+            .as_deref()
+            .map(|v| format!(" (v{v})"))
+            .unwrap_or_default();
         win.set_pg_path_text(
             status
                 .pg_dump
                 .as_ref()
-                .map(|p| format!("Found: {}", p.display()))
+                .map(|p| format!("Found{pg_ver}: {}", p.display()))
                 .unwrap_or_else(|| "Not found — follow the steps below".to_string())
                 .into(),
         );
 
         win.set_mongo_ready(mongo_ready);
+        let mg_ver = status
+            .versions
+            .mongodump
+            .as_deref()
+            .map(|v| format!(" (v{v})"))
+            .unwrap_or_default();
         win.set_mongo_path_text(
             status
                 .mongodump
                 .as_ref()
-                .map(|p| format!("Found: {}", p.display()))
+                .map(|p| format!("Found{mg_ver}: {}", p.display()))
                 .unwrap_or_else(|| "Not found — follow the steps below".to_string())
                 .into(),
         );

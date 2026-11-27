@@ -25,12 +25,23 @@ impl BackupStatus {
     }
 }
 
+/// Origin of a recorded backup snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackupSourceKind {
+    /// Backup triggered from a direct local/remote database connection.
+    #[default]
+    Direct,
+    /// Snapshot pulled from a remote VPS agent via encrypted bridge.
+    VpsPull,
+}
+
 /// A recorded backup snapshot in history (matches ChronoBase v1 JSON schema).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupEntry {
     /// Auto-incremented unique identifier.
     pub id: u64,
-    /// ID of the source connection.
+    /// ID of the source connection (or VPS peer ID for `VpsPull`).
     pub connection_id: u64,
     /// Snapshot of connection name at backup time.
     pub connection_name: String,
@@ -39,6 +50,9 @@ pub struct BackupEntry {
     /// Database engine kind.
     #[serde(rename = "type")]
     pub db_type: DbKind,
+    /// Origin kind (`direct` or `vps_pull`).
+    #[serde(default)]
+    pub source_kind: BackupSourceKind,
     /// Relative path under `backups/` (new) or legacy absolute path (v1).
     pub file_path: String,
     /// Total size in bytes of the `.sql` file or BSON directory.

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::backup::{BackupEntry, BackupError, BackupStatus};
+use crate::backup::{BackupEntry, BackupError, BackupSourceKind, BackupStatus};
 use crate::connection::DbKind;
 use crate::constant::BACKUP_HISTORY_CAP;
 use crate::store::{JsonStore, local_timestamp};
@@ -18,6 +18,8 @@ pub struct RecordBackupInput {
     pub group_name: String,
     /// Database engine kind.
     pub db_type: DbKind,
+    /// Origin kind (`Direct` or `VpsPull`).
+    pub source_kind: BackupSourceKind,
     /// Relative path under `backups/` (empty on failure).
     pub file_path: String,
     /// Size in bytes (0 on failure).
@@ -76,6 +78,7 @@ impl BackupRepository for StoreBackupRepository {
                 connection_name: input.connection_name,
                 group_name: input.group_name,
                 db_type: input.db_type,
+                source_kind: input.source_kind,
                 file_path: input.file_path,
                 file_size: input.file_size,
                 status: input.status,
@@ -134,6 +137,7 @@ mod tests {
                 connection_name: format!("DB {i}"),
                 group_name: "Default".into(),
                 db_type: DbKind::Postgres,
+                source_kind: BackupSourceKind::Direct,
                 file_path: format!("Default/DB_{i}.sql"),
                 file_size: 10,
                 status: BackupStatus::Success,
