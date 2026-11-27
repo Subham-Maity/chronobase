@@ -5,7 +5,7 @@ All notable changes to ChronoBase will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-11-27
 
 ### Added
 - **Backup Retention & Auto-Cleanup (`chronobase cleanup [--dry-run]`):** Added pure `plan_retention` planner, `RetentionService::{preview, run}`, schema v4 (`AppSettings.retention`, `CleanupFrequency`, and per-connection `Connection.retention` overrides, disabled by default on v1/v3 upgrades), serialized locking against restore/migration, triggers (post-backup, startup, and `ScheduleRunner` cadence), and Slint **Schedules -> Automatic Retention** + Connection modal override controls. Retention deletes exclusively through `BackupService::delete_backup` (canonicalized `backups/` path containment), always protects the newest good snapshot per `(connection_id, source_kind)`, and never deletes snapshots under 1 hour old.
